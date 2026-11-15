@@ -1,0 +1,16 @@
+node_modules/
+dist/
+dist-ssr/
+coverage/
+.tools/
+.zig-cache/
+zig-cache/
+zig-out/
+test-results/
+playwright-report/
+blob-report/
+*.local
+.DS_Store
+.vite/
+apps/web/src/wasm/pixelforge.wasm
+apps/web/src/wasm/wasm-manifest.json

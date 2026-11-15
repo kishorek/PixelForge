@@ -1,0 +1,41 @@
+{
+  "name": "pixelforge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first, browser-based image utility and lightweight editing studio.",
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "zig:install": "node scripts/install-zig.mjs",
+    "wasm:build": "node scripts/build-wasm.mjs",
+    "wasm:verify": "node scripts/verify-wasm.mjs",
+    "wasm:test": "node scripts/zig.mjs test",
+    "dev": "npm run wasm:build && npm run dev -w @pixelforge/web",
+    "build": "npm run wasm:build && npm run wasm:verify && npm run build -w @pixelforge/web",
+    "preview": "npm run preview -w @pixelforge/web",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "verify": "npm run wasm:test && npm run typecheck && npm run lint && npm run test && npm run build && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@playwright/test": "1.53.2",
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.3.0",
+    "@testing-library/user-event": "14.6.1",
+    "@types/node": "22.15.30",
+    "@types/react": "19.1.6",
+    "@types/react-dom": "19.1.6",
+    "jsdom": "26.1.0",
+    "typescript": "5.9.3",
+    "vite": "6.4.6",
+    "vitest": "3.2.7"
+  }
+}
