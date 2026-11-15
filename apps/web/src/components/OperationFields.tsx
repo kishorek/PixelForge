@@ -1,17 +1,37 @@
 import type {
+  AdjustParams,
   Anchor,
+  BorderParams,
+  ChromaKeyParams,
   CropParams,
   Dimensions,
+  FilterParams,
   ImageWatermarkParams,
+  MaskEffectParams,
   Operation,
+  QuantizeParams,
   ResizeParams,
+  ShapeParams,
   TextWatermarkParams,
+  WarpParams,
 } from "@pixelforge/image-contracts";
-import { cropWithAspect } from "@pixelforge/operation-model";
-import { useRef, useState } from "react";
-import { useWatermarkUpload } from "../hooks/useWatermarkUpload";
-import { useSession } from "../state/session";
 import {
+  DEFAULT_ADJUST,
+  DEFAULT_BORDER,
+  DEFAULT_CHROMA_KEY,
+  DEFAULT_FILTER,
+  DEFAULT_MASK_EFFECT,
+  DEFAULT_QUANTIZE,
+  DEFAULT_SHAPE,
+  DEFAULT_WARP,
+  cropWithAspect,
+} from "@pixelforge/operation-model";
+import { type MouseEvent, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { useWatermarkUpload } from "../hooks/useWatermarkUpload";
+import { activeAssetOf, useSession } from "../state/session";
+import {
+  Alert,
   Button,
   ColorField,
   Field,
@@ -178,6 +198,8 @@ function ResizeFields({
         options={[
           { value: "bilinear", label: "Bilinear — smooth" },
           { value: "box", label: "Box — crisp downscale" },
+          { value: "lanczos3", label: "Lanczos 3 — high quality" },
+          { value: "catmull-rom", label: "Catmull-Rom — sharp" },
           { value: "nearest", label: "Nearest — pixel art" },
         ]}
         onChange={(resampling) => update({ resampling })}
@@ -324,6 +346,26 @@ function TextWatermarkFields({
         onChange={(fontFamily) => update({ fontFamily })}
         hint="Uses system fonts, so no font download is required."
       />
+      <SelectField
+        id={`${id}-weight`}
+        label="Weight"
+        value={String(params.fontWeight)}
+        options={[
+          { value: "400", label: "Regular" },
+          { value: "600", label: "Semibold" },
+          { value: "700", label: "Bold" },
+          { value: "800", label: "Heavy" },
+        ]}
+        onChange={(weight) =>
+          update({ fontWeight: Number(weight) as TextWatermarkParams["fontWeight"] })
+        }
+      />
+      <SwitchRow
+        id={`${id}-italic`}
+        label="Italic"
+        checked={params.italic}
+        onChange={(italic) => update({ italic })}
+      />
       <RangeField
         id={`${id}-size`}
         label="Size"
@@ -336,10 +378,37 @@ function TextWatermarkFields({
       />
       <ColorField
         id={`${id}-color`}
-        label="Colour"
+        label="Text colour"
         value={params.color}
         onChange={(color) => update({ color })}
       />
+      <SwitchRow
+        id={`${id}-plate`}
+        label="Caption plate"
+        description="Draw a background behind the text."
+        checked={params.background !== null}
+        onChange={(enabled) => update({ background: enabled ? "#000000" : null })}
+      />
+      {params.background !== null ? (
+        <>
+          <ColorField
+            id={`${id}-background`}
+            label="Plate colour"
+            value={params.background}
+            onChange={(background) => update({ background })}
+          />
+          <RangeField
+            id={`${id}-padding`}
+            label="Plate padding"
+            value={Math.round(params.paddingRatio * 1000) / 10}
+            min={0}
+            max={20}
+            step={0.1}
+            format={(value) => `${value}%`}
+            onChange={(value) => update({ paddingRatio: value / 100 })}
+          />
+        </>
+      ) : null}
       <RangeField
         id={`${id}-opacity`}
         label="Opacity"
@@ -491,6 +560,616 @@ function ImageWatermarkFields({
   );
 }
 
+function GroupTitle({ children }: { children: string }) {
+  return <span className="field-group-title">{children}</span>;
+}
+
+function AdjustFields({
+  operation,
+  onChange,
+}: {
+  operation: Operation & { type: "adjust" };
+  onChange: (operation: Operation) => void;
+}) {
+  const params = operation.params;
+  const update = (patch: Partial<AdjustParams>) => onChange(patchParams(operation, patch));
+  const slider = (
+    key: keyof AdjustParams,
+    label: string,
+    min: number,
+    max: number,
+    step = 1,
+    format?: (value: number) => string,
+  ) => (
+    <RangeField
+      key={key}
+      id={`${operation.id}-${key}`}
+      label={label}
+      value={params[key]}
+      min={min}
+      max={max}
+      step={step}
+      format={format}
+      onChange={(value) => update({ [key]: value } as Partial<AdjustParams>)}
+    />
+  );
+
+  return (
+    <>
+      <GroupTitle>Light</GroupTitle>
+      {slider("exposure", "Exposure", -100, 100)}
+      {slider("brightness", "Brightness", -100, 100)}
+      {slider("contrast", "Contrast", -100, 100)}
+      {slider("highlights", "Highlights", -100, 100)}
+      {slider("shadows", "Shadows", -100, 100)}
+      {slider("gamma", "Gamma", 0.2, 3, 0.01, (value) => value.toFixed(2))}
+      <div className="divider" />
+      <GroupTitle>Colour</GroupTitle>
+      {slider("saturation", "Saturation", -100, 100)}
+      {slider("vibrance", "Vibrance", -100, 100)}
+      {slider("temperature", "Temperature", -100, 100)}
+      {slider("tint", "Tint", -100, 100)}
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => onChange(patchParams(operation, DEFAULT_ADJUST))}
+      >
+        Reset adjustments
+      </Button>
+      <p className="field__hint">Tone and colour adjustments run in the WASM engine.</p>
+    </>
+  );
+}
+
+function FilterFields({
+  operation,
+  onChange,
+}: {
+  operation: Operation & { type: "filter" };
+  onChange: (operation: Operation) => void;
+}) {
+  const params = operation.params;
+  const update = (patch: Partial<FilterParams>) => onChange(patchParams(operation, patch));
+
+  return (
+    <>
+      <SelectField
+        id={`${operation.id}-preset`}
+        label="Filter"
+        value={params.preset}
+        options={[
+          { value: "grayscale", label: "Grayscale" },
+          { value: "sepia", label: "Sepia" },
+          { value: "invert", label: "Invert" },
+          { value: "blur", label: "Blur" },
+          { value: "sharpen", label: "Sharpen" },
+          { value: "emboss", label: "Emboss" },
+          { value: "edge", label: "Edge detect" },
+          { value: "posterize", label: "Posterize" },
+          { value: "vignette", label: "Vignette" },
+        ]}
+        onChange={(preset) => update({ preset })}
+      />
+      <RangeField
+        id={`${operation.id}-intensity`}
+        label="Strength"
+        value={Math.round(params.intensity * 100)}
+        min={0}
+        max={100}
+        format={(value) => `${value}%`}
+        onChange={(value) => update({ intensity: value / 100 })}
+      />
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => onChange(patchParams(operation, DEFAULT_FILTER))}
+      >
+        Reset filter
+      </Button>
+      <p className="field__hint">
+        Blur, sharpen, emboss and edge use convolution. Add another filter for a stacked look.
+      </p>
+    </>
+  );
+}
+
+function clampShape(params: ShapeParams): ShapeParams {
+  const width = Math.min(1, Math.max(0.01, params.width));
+  const height = Math.min(1, Math.max(0.01, params.height));
+  return {
+    ...params,
+    width,
+    height,
+    x: Math.min(Math.max(0, params.x), 1 - width),
+    y: Math.min(Math.max(0, params.y), 1 - height),
+  };
+}
+
+function ShapeFields({
+  operation,
+  onChange,
+}: {
+  operation: Operation & { type: "shape" };
+  onChange: (operation: Operation) => void;
+}) {
+  const params = operation.params;
+  const update = (patch: Partial<ShapeParams>) =>
+    onChange(patchParams(operation, clampShape({ ...params, ...patch })));
+  const percentage = (value: number) => Math.round(value * 100);
+
+  return (
+    <>
+      <Field label="Shape" hint="Lines and arrows run diagonally through the selection box.">
+        <SegmentedControl
+          label="Shape type"
+          value={params.shape}
+          options={[
+            { value: "rectangle", label: "Rectangle" },
+            { value: "ellipse", label: "Ellipse" },
+            { value: "line", label: "Line" },
+            { value: "arrow", label: "Arrow" },
+          ]}
+          onChange={(shape) => update({ shape: shape as ShapeParams["shape"] })}
+        />
+      </Field>
+      <GroupTitle>Geometry</GroupTitle>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
+        <NumberField
+          id={`${operation.id}-x`}
+          label="X position"
+          value={percentage(params.x)}
+          min={0}
+          max={99}
+          suffix="%"
+          onChange={(value) => update({ x: value / 100 })}
+        />
+        <NumberField
+          id={`${operation.id}-y`}
+          label="Y position"
+          value={percentage(params.y)}
+          min={0}
+          max={99}
+          suffix="%"
+          onChange={(value) => update({ y: value / 100 })}
+        />
+        <NumberField
+          id={`${operation.id}-width`}
+          label="Width"
+          value={percentage(params.width)}
+          min={1}
+          max={100}
+          suffix="%"
+          onChange={(value) => update({ width: value / 100 })}
+        />
+        <NumberField
+          id={`${operation.id}-height`}
+          label="Height"
+          value={percentage(params.height)}
+          min={1}
+          max={100}
+          suffix="%"
+          onChange={(value) => update({ height: value / 100 })}
+        />
+      </div>
+      {params.shape === "rectangle" || params.shape === "ellipse" ? (
+        <ColorField
+          id={`${operation.id}-fill`}
+          label="Fill"
+          value={params.fill}
+          onChange={(fill) => update({ fill })}
+        />
+      ) : null}
+      <ColorField
+        id={`${operation.id}-stroke`}
+        label="Stroke"
+        value={params.stroke}
+        onChange={(stroke) => update({ stroke })}
+      />
+      <RangeField
+        id={`${operation.id}-stroke-width`}
+        label="Stroke width"
+        value={Math.round(params.strokeWidthRatio * 1000) / 10}
+        min={0}
+        max={10}
+        step={0.1}
+        format={(value) => `${value}%`}
+        onChange={(value) => update({ strokeWidthRatio: value / 100 })}
+      />
+      <RangeField
+        id={`${operation.id}-opacity`}
+        label="Opacity"
+        value={Math.round(params.opacity * 100)}
+        min={0}
+        max={100}
+        format={(value) => `${value}%`}
+        onChange={(value) => update({ opacity: value / 100 })}
+      />
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => onChange(patchParams(operation, DEFAULT_SHAPE))}
+      >
+        Reset shape
+      </Button>
+    </>
+  );
+}
+
+function toHex(r: number, g: number, b: number): string {
+  return `#${[r, g, b]
+    .map((value) =>
+      Math.max(0, Math.min(255, Math.round(value)))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+}
+
+function ColourSampler({ onPick }: { onPick: (colour: string) => void }) {
+  const asset = useSession(activeAssetOf);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const dataRef = useRef<ImageData | null>(null);
+
+  useEffect(() => {
+    if (!asset) {
+      dataRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    const image = new Image();
+    image.onload = () => {
+      if (cancelled) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const maxEdge = 280;
+      const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) return;
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      dataRef.current = context.getImageData(0, 0, canvas.width, canvas.height);
+    };
+    image.src = asset.previewUrl;
+    return () => {
+      cancelled = true;
+      image.onload = null;
+    };
+  }, [asset]);
+
+  if (!asset) return null;
+
+  const pick = (event: MouseEvent<HTMLButtonElement>) => {
+    const canvas = canvasRef.current;
+    const data = dataRef.current;
+    if (!canvas || !data) return;
+    const rect = canvas.getBoundingClientRect();
+    const keyboard = event.detail === 0;
+    const x = keyboard
+      ? Math.floor(canvas.width / 2)
+      : Math.floor(((event.clientX - rect.left) / rect.width) * canvas.width);
+    const y = keyboard
+      ? Math.floor(canvas.height / 2)
+      : Math.floor(((event.clientY - rect.top) / rect.height) * canvas.height);
+    const offset = (y * canvas.width + x) * 4;
+    onPick(toHex(data.data[offset] ?? 0, data.data[offset + 1] ?? 0, data.data[offset + 2] ?? 0));
+  };
+
+  return (
+    <div className="colour-sampler">
+      <span className="field__label">Pick a colour from the image</span>
+      <button
+        type="button"
+        className="colour-sampler__image"
+        onClick={pick}
+        aria-label="Pick a colour from the active image (click the image)"
+      >
+        <canvas ref={canvasRef} />
+      </button>
+      <span className="field__hint">
+        Click the background colour in this sample. Keyboard activation picks the centre pixel.
+      </span>
+    </div>
+  );
+}
+
+function ChromaKeyFields({
+  operation,
+  onChange,
+}: {
+  operation: Operation & { type: "chroma-key" };
+  onChange: (operation: Operation) => void;
+}) {
+  const params = operation.params;
+  const update = (patch: Partial<ChromaKeyParams>) => onChange(patchParams(operation, patch));
+
+  return (
+    <>
+      <ColourSampler onPick={(color) => update({ color })} />
+      <ColorField
+        id={`${operation.id}-key`}
+        label="Key colour"
+        value={params.color}
+        onChange={(color) => update({ color })}
+      />
+      <RangeField
+        id={`${operation.id}-tolerance`}
+        label="Tolerance"
+        value={params.tolerance}
+        min={0}
+        max={100}
+        format={(value) => `${value}%`}
+        onChange={(tolerance) => update({ tolerance })}
+        hint="How close a pixel must be to the key colour."
+      />
+      <RangeField
+        id={`${operation.id}-feather`}
+        label="Feather"
+        value={params.feather}
+        min={0}
+        max={100}
+        format={(value) => `${value}%`}
+        onChange={(feather) => update({ feather })}
+        hint="Softens the edge between keyed and kept pixels."
+      />
+      <SwitchRow
+        id={`${operation.id}-invert`}
+        label="Keep the keyed colour instead"
+        description="Invert the key mask."
+        checked={params.invert}
+        onChange={(invert) => update({ invert })}
+      />
+      <SwitchRow
+        id={`${operation.id}-replace`}
+        label="Replace with a background colour"
+        description="When off, keyed pixels become transparent."
+        checked={params.background !== null}
+        onChange={(enabled) => update({ background: enabled ? "#ffffff" : null })}
+      />
+      {params.background !== null ? (
+        <ColorField
+          id={`${operation.id}-background`}
+          label="Background colour"
+          value={params.background}
+          onChange={(background) => update({ background })}
+        />
+      ) : null}
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => onChange(patchParams(operation, DEFAULT_CHROMA_KEY))}
+      >
+        Reset chroma key
+      </Button>
+    </>
+  );
+}
+
+function QuantizeFields({
+  operation,
+  onChange,
+}: {
+  operation: Operation & { type: "quantize" };
+  onChange: (operation: Operation) => void;
+}) {
+  const params = operation.params;
+  const update = (patch: Partial<QuantizeParams>) => onChange(patchParams(operation, patch));
+
+  return (
+    <>
+      <RangeField
+        id={`${operation.id}-colours`}
+        label="Palette colours"
+        value={params.colors}
+        min={2}
+        max={64}
+        onChange={(colors) => update({ colors: Math.round(colors) })}
+        hint="The palette is extracted from the current image."
+      />
+      <SelectField
+        id={`${operation.id}-dither`}
+        label="Dithering"
+        value={params.dither}
+        options={[
+          { value: "none", label: "None" },
+          { value: "ordered", label: "Ordered (Bayer 4×4)" },
+          { value: "floyd-steinberg", label: "Floyd–Steinberg" },
+        ]}
+        onChange={(dither) => update({ dither: dither as QuantizeParams["dither"] })}
+      />
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => onChange(patchParams(operation, DEFAULT_QUANTIZE))}
+      >
+        Reset quantization
+      </Button>
+      <p className="field__hint">
+        Palette reduction is a conventional colour quantizer; dithering trades banding for a
+        patterned result.
+      </p>
+    </>
+  );
+}
+
+function MaskEffectFields({
+  operation,
+  onChange,
+}: {
+  operation: Operation & { type: "mask-effect" };
+  onChange: (operation: Operation) => void;
+}) {
+  const params = operation.params;
+  const update = (patch: Partial<MaskEffectParams>) => onChange(patchParams(operation, patch));
+
+  return (
+    <>
+      <SelectField
+        id={`${operation.id}-effect`}
+        label="Masked effect"
+        value={params.effect}
+        options={[
+          { value: "erase", label: "Erase (alpha)" },
+          { value: "blur", label: "Blur" },
+          { value: "sharpen", label: "Sharpen" },
+        ]}
+        onChange={(effect) => update({ effect: effect as MaskEffectParams["effect"] })}
+      />
+      <RangeField
+        id={`${operation.id}-feather`}
+        label="Feather"
+        value={params.feather}
+        min={0}
+        max={100}
+        format={(value) => `${value}%`}
+        onChange={(feather) => update({ feather })}
+        hint="Softens the mask edge before the effect is applied."
+      />
+      <SwitchRow
+        id={`${operation.id}-invert`}
+        label="Invert mask"
+        checked={params.invert}
+        onChange={(invert) => update({ invert })}
+      />
+      {params.maskDataUrl.length === 0 ? (
+        <Alert tone="info" title="No mask painted">
+          Paint a mask with the brush, then return here to tune the effect.{" "}
+          <Link to="/mask">Open the Mask tool</Link>.
+        </Alert>
+      ) : (
+        <Link className="btn btn--sm" to="/mask">
+          Edit mask in Mask tool
+        </Link>
+      )}
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => onChange(patchParams(operation, DEFAULT_MASK_EFFECT))}
+      >
+        Reset masked effect
+      </Button>
+      <p className="field__hint">
+        The mask is stored as a PNG with the operation and is applied at full resolution on export.
+      </p>
+    </>
+  );
+}
+
+function WarpFields({
+  operation,
+  onChange,
+}: {
+  operation: Operation & { type: "warp" };
+  onChange: (operation: Operation) => void;
+}) {
+  const params = operation.params;
+  const update = (patch: Partial<WarpParams>) => onChange(patchParams(operation, patch));
+
+  return (
+    <>
+      <RangeField
+        id={`${operation.id}-perspective`}
+        label="Perspective"
+        value={params.perspective}
+        min={-100}
+        max={100}
+        onChange={(perspective) => update({ perspective })}
+        hint="Approximate vertical keystone. Negative and positive directions mirror."
+      />
+      <RangeField
+        id={`${operation.id}-distortion`}
+        label="Distortion"
+        value={params.distortion}
+        min={-100}
+        max={100}
+        onChange={(distortion) => update({ distortion })}
+        hint="Radial barrel (+) or pincushion (−) correction."
+      />
+      <SwitchRow
+        id={`${operation.id}-background`}
+        label="Fill exposed edges"
+        description="When off, areas warped outside the source become transparent."
+        checked={params.background !== null}
+        onChange={(enabled) => update({ background: enabled ? "#000000" : null })}
+      />
+      {params.background !== null ? (
+        <ColorField
+          id={`${operation.id}-background-colour`}
+          label="Edge colour"
+          value={params.background}
+          onChange={(background) => update({ background })}
+        />
+      ) : null}
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => onChange(patchParams(operation, DEFAULT_WARP))}
+      >
+        Reset warp
+      </Button>
+      <p className="field__hint">
+        This is a conventional pixel warp, not a semantic correction. Extreme values can reveal
+        transparent or filled edges.
+      </p>
+    </>
+  );
+}
+
+function BorderFields({
+  operation,
+  onChange,
+}: {
+  operation: Operation & { type: "border" };
+  onChange: (operation: Operation) => void;
+}) {
+  const params = operation.params;
+  const update = (patch: Partial<BorderParams>) => onChange(patchParams(operation, patch));
+
+  return (
+    <>
+      <RangeField
+        id={`${operation.id}-width`}
+        label="Border width"
+        value={Math.round(params.widthRatio * 1000) / 10}
+        min={0}
+        max={20}
+        step={0.1}
+        format={(value) => `${value}%`}
+        onChange={(value) => update({ widthRatio: value / 100 })}
+      />
+      <ColorField
+        id={`${operation.id}-colour`}
+        label="Border colour"
+        value={params.color}
+        onChange={(color) => update({ color })}
+      />
+      <RangeField
+        id={`${operation.id}-opacity`}
+        label="Opacity"
+        value={Math.round(params.opacity * 100)}
+        min={0}
+        max={100}
+        format={(value) => `${value}%`}
+        onChange={(value) => update({ opacity: value / 100 })}
+      />
+      <SwitchRow
+        id={`${operation.id}-inset`}
+        label="Inset border"
+        description="Keep the border inside the image bounds."
+        checked={params.inset}
+        onChange={(inset) => update({ inset })}
+      />
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => onChange(patchParams(operation, DEFAULT_BORDER))}
+      >
+        Reset border
+      </Button>
+    </>
+  );
+}
+
 export function OperationFields({
   operation,
   source,
@@ -505,23 +1184,61 @@ export function OperationFields({
       return <ResizeFields operation={operation} source={source} onChange={onChange} />;
     case "crop":
       return <CropFields operation={operation} source={source} onChange={onChange} />;
-    case "rotate":
+    case "rotate": {
+      const params = operation.params;
+      const normalized = ((params.angle % 360) + 360) % 360;
       return (
-        <Field label="Rotation" hint="Right-angle rotations run in the WASM engine.">
-          <SegmentedControl
-            label="Rotation angle"
-            value={String(operation.params.angle)}
-            options={[
-              { value: "90", label: "90° clockwise" },
-              { value: "180", label: "180°" },
-              { value: "270", label: "270° clockwise" },
-            ]}
-            onChange={(angle) =>
-              onChange(patchParams(operation, { angle: Number(angle) as 90 | 180 | 270 }))
+        <>
+          <Field label="Right-angle presets" hint="Right-angle rotations use the faster WASM path.">
+            <SegmentedControl
+              label="Rotation preset"
+              value={String(normalized)}
+              options={[
+                { value: "0", label: "0°" },
+                { value: "90", label: "90°" },
+                { value: "180", label: "180°" },
+                { value: "270", label: "270°" },
+              ]}
+              onChange={(angle) => onChange(patchParams(operation, { angle: Number(angle) }))}
+            />
+          </Field>
+          <NumberField
+            id={`${operation.id}-angle`}
+            label="Angle"
+            value={Math.round(params.angle)}
+            min={-360}
+            max={360}
+            suffix="°"
+            onChange={(angle) => onChange(patchParams(operation, { angle }))}
+            hint="Arbitrary angles expand the canvas to the rotated bounds."
+          />
+          <SwitchRow
+            id={`${operation.id}-fill`}
+            label="Fill exposed corners"
+            description="When off, areas outside the rotated image become transparent."
+            checked={params.background !== null && params.background !== undefined}
+            onChange={(enabled) =>
+              onChange(patchParams(operation, { background: enabled ? "#000000" : null }))
             }
           />
-        </Field>
+          {params.background !== null && params.background !== undefined ? (
+            <ColorField
+              id={`${operation.id}-background`}
+              label="Corner colour"
+              value={params.background}
+              onChange={(background) => onChange(patchParams(operation, { background }))}
+            />
+          ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onChange(patchParams(operation, { angle: 90, background: null }))}
+          >
+            Reset rotation
+          </Button>
+        </>
       );
+    }
     case "flip":
       return (
         <Field label="Flip direction">
@@ -544,5 +1261,21 @@ export function OperationFields({
       return <TextWatermarkFields operation={operation} onChange={onChange} />;
     case "watermark-image":
       return <ImageWatermarkFields operation={operation} onChange={onChange} />;
+    case "adjust":
+      return <AdjustFields operation={operation} onChange={onChange} />;
+    case "filter":
+      return <FilterFields operation={operation} onChange={onChange} />;
+    case "shape":
+      return <ShapeFields operation={operation} onChange={onChange} />;
+    case "border":
+      return <BorderFields operation={operation} onChange={onChange} />;
+    case "chroma-key":
+      return <ChromaKeyFields operation={operation} onChange={onChange} />;
+    case "warp":
+      return <WarpFields operation={operation} onChange={onChange} />;
+    case "mask-effect":
+      return <MaskEffectFields operation={operation} onChange={onChange} />;
+    case "quantize":
+      return <QuantizeFields operation={operation} onChange={onChange} />;
   }
 }

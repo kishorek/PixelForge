@@ -2,9 +2,9 @@ import { ArrowRight, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button, EmptyState } from "../../components/ui";
-import { EXTRA_WORKSPACES, TOOLS } from "./tools";
+import { EXTRA_WORKSPACES, POWER_TOOLS, TOOLS } from "./tools";
 
-const CATEGORIES = ["Essentials", "Overlay"] as const;
+const CATEGORIES = ["Essentials", "Edit", "Overlay", "Background", "Advanced"] as const;
 
 export function ToolsIndexPage() {
   const [query, setQuery] = useState("");
@@ -19,6 +19,23 @@ export function ToolsIndexPage() {
       ),
     [normalised],
   );
+  const filteredWorkspaces = useMemo(
+    () =>
+      EXTRA_WORKSPACES.filter((workspace) =>
+        `${workspace.title} ${workspace.description} ${workspace.meta}`
+          .toLowerCase()
+          .includes(normalised),
+      ),
+    [normalised],
+  );
+  const filteredPowers = useMemo(
+    () =>
+      POWER_TOOLS.filter((tool) =>
+        `${tool.title} ${tool.description} ${tool.meta}`.toLowerCase().includes(normalised),
+      ),
+    [normalised],
+  );
+  const totalMatches = filtered.length + filteredWorkspaces.length + filteredPowers.length;
 
   return (
     <div className="page">
@@ -41,7 +58,7 @@ export function ToolsIndexPage() {
             className="input"
             type="search"
             value={query}
-            placeholder="Search tools — resize, compress, watermark…"
+            placeholder="Search tools — resize, filter, watermark, collage…"
             onChange={(event) => setQuery(event.target.value)}
           />
           <span className="input-affix" aria-hidden="true">
@@ -55,7 +72,7 @@ export function ToolsIndexPage() {
         ) : null}
       </div>
 
-      {filtered.length === 0 ? (
+      {totalMatches === 0 ? (
         <EmptyState
           title="No tools match that search"
           action={
@@ -103,14 +120,14 @@ export function ToolsIndexPage() {
             );
           })}
 
-          {normalised.length === 0 ? (
+          {filteredWorkspaces.length > 0 ? (
             <section>
               <div className="section-heading">
                 <h2>Workspaces</h2>
-                <p>Multi-step and multi-image work</p>
+                <p>{filteredWorkspaces.length} workspaces</p>
               </div>
               <div className="tool-grid tool-grid--cards">
-                {EXTRA_WORKSPACES.map((workspace) => {
+                {filteredWorkspaces.map((workspace) => {
                   const Icon = workspace.icon;
                   return (
                     <Link className="tool-card" to={workspace.path} key={workspace.path}>
@@ -123,6 +140,33 @@ export function ToolsIndexPage() {
                       <span className="tool-card__title">{workspace.title}</span>
                       <span className="tool-card__desc">{workspace.description}</span>
                       <span className="tool-card__meta">{workspace.meta}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
+          {filteredPowers.length > 0 ? (
+            <section>
+              <div className="section-heading">
+                <h2>Power tools</h2>
+                <p>{filteredPowers.length} utilities</p>
+              </div>
+              <div className="tool-grid tool-grid--cards">
+                {filteredPowers.map((tool) => {
+                  const Icon = tool.icon;
+                  return (
+                    <Link className="tool-card" to={tool.path} key={tool.path}>
+                      <Icon
+                        className="tool-card__icon"
+                        size={22}
+                        strokeWidth={1.7}
+                        aria-hidden="true"
+                      />
+                      <span className="tool-card__title">{tool.title}</span>
+                      <span className="tool-card__desc">{tool.description}</span>
+                      <span className="tool-card__meta">{tool.meta}</span>
                     </Link>
                   );
                 })}

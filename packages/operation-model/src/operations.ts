@@ -1,12 +1,20 @@
 import { PixelForgeError } from "@pixelforge/image-contracts";
 import type {
+  AdjustParams,
+  BorderParams,
+  ChromaKeyParams,
   CropParams,
   Dimensions,
+  FilterParams,
   ImageWatermarkParams,
+  MaskEffectParams,
   Operation,
   OperationType,
+  QuantizeParams,
   ResizeParams,
+  ShapeParams,
   TextWatermarkParams,
+  WarpParams,
 } from "@pixelforge/image-contracts";
 import { RESAMPLING_METHODS, clamp01, invalidInput } from "./dimensions";
 
@@ -25,6 +33,10 @@ export const DEFAULT_TEXT_WATERMARK: Omit<TextWatermarkParams, "text"> = {
   anchor: "bottom-right",
   marginRatio: 0.04,
   tile: false,
+  background: null,
+  paddingRatio: 0.02,
+  fontWeight: 600,
+  italic: false,
 };
 
 export const DEFAULT_IMAGE_WATERMARK: ImageWatermarkParams = {
@@ -45,6 +57,57 @@ export const DEFAULT_RESIZE = (source: Dimensions): ResizeParams => ({
 });
 
 export const DEFAULT_CROP: CropParams = { x: 0, y: 0, width: 1, height: 1 };
+
+export const DEFAULT_ADJUST: AdjustParams = {
+  brightness: 0,
+  contrast: 0,
+  saturation: 0,
+  temperature: 0,
+  exposure: 0,
+  highlights: 0,
+  shadows: 0,
+  tint: 0,
+  gamma: 1,
+  vibrance: 0,
+};
+
+export const DEFAULT_FILTER: FilterParams = { preset: "grayscale", intensity: 1 };
+
+export const DEFAULT_SHAPE: ShapeParams = {
+  shape: "rectangle",
+  x: 0.1,
+  y: 0.1,
+  width: 0.35,
+  height: 0.25,
+  fill: "#b03d16",
+  stroke: "#ffffff",
+  strokeWidthRatio: 0.008,
+  opacity: 0.9,
+};
+
+export const DEFAULT_WARP: WarpParams = { perspective: 0, distortion: 0, background: null };
+export const DEFAULT_QUANTIZE: QuantizeParams = { colors: 8, dither: "none" };
+export const DEFAULT_MASK_EFFECT: MaskEffectParams = {
+  effect: "erase",
+  maskDataUrl: "",
+  feather: 10,
+  invert: false,
+};
+
+export const DEFAULT_CHROMA_KEY: ChromaKeyParams = {
+  color: "#ffffff",
+  tolerance: 20,
+  feather: 10,
+  invert: false,
+  background: null,
+};
+
+export const DEFAULT_BORDER: BorderParams = {
+  widthRatio: 0.03,
+  color: "#ffffff",
+  opacity: 1,
+  inset: true,
+};
 
 export function createOperation(
   type: OperationType,
@@ -67,7 +130,10 @@ export function createOperation(
         id,
         type,
         enabled: true,
-        params: { angle: 90, ...overrides } as { angle: 90 | 180 | 270 },
+        params: { angle: 90, background: null, ...overrides } as {
+          angle: number;
+          background: string | null;
+        },
       };
     case "flip":
       return {
@@ -91,6 +157,62 @@ export function createOperation(
       };
     case "watermark-image":
       return { id, type, enabled: true, params: { ...DEFAULT_IMAGE_WATERMARK, ...overrides } };
+    case "adjust":
+      return {
+        id,
+        type,
+        enabled: true,
+        params: { ...DEFAULT_ADJUST, ...overrides } as AdjustParams,
+      };
+    case "filter":
+      return {
+        id,
+        type,
+        enabled: true,
+        params: { ...DEFAULT_FILTER, ...overrides } as FilterParams,
+      };
+    case "shape":
+      return {
+        id,
+        type,
+        enabled: true,
+        params: { ...DEFAULT_SHAPE, ...overrides } as ShapeParams,
+      };
+    case "border":
+      return {
+        id,
+        type,
+        enabled: true,
+        params: { ...DEFAULT_BORDER, ...overrides } as BorderParams,
+      };
+    case "chroma-key":
+      return {
+        id,
+        type,
+        enabled: true,
+        params: { ...DEFAULT_CHROMA_KEY, ...overrides } as ChromaKeyParams,
+      };
+    case "warp":
+      return {
+        id,
+        type,
+        enabled: true,
+        params: { ...DEFAULT_WARP, ...overrides } as WarpParams,
+      };
+    case "mask-effect":
+      return {
+        id,
+        type,
+        enabled: true,
+        params: { ...DEFAULT_MASK_EFFECT, ...overrides } as MaskEffectParams,
+      };
+    case "quantize":
+      return {
+        id,
+        type,
+        enabled: true,
+        params: { ...DEFAULT_QUANTIZE, ...overrides } as QuantizeParams,
+      };
   }
 }
 
@@ -145,8 +267,16 @@ export function validateOperation(operation: Operation): string[] {
       break;
     }
     case "rotate": {
-      if (![90, 180, 270].includes(operation.params.angle)) {
-        errors.push("Rotation must be 90, 180 or 270 degrees.");
+      const params = operation.params;
+      if (!Number.isFinite(params.angle) || params.angle < -360 || params.angle > 360) {
+        errors.push("Rotation angle must be between -360 and 360 degrees.");
+      }
+      if (
+        params.background !== undefined &&
+        params.background !== null &&
+        (typeof params.background !== "string" || params.background.trim().length === 0)
+      ) {
+        errors.push("Rotation background must be a colour or transparent.");
       }
       break;
     }
@@ -176,6 +306,24 @@ export function validateOperation(operation: Operation): string[] {
         errors.push("Watermark margin must be between 0 and 0.5.");
       }
       if (params.color.trim().length === 0) errors.push("Watermark colour cannot be empty.");
+      if (
+        params.background !== null &&
+        (typeof params.background !== "string" || params.background.trim().length === 0)
+      ) {
+        errors.push("Watermark background must be a colour or none.");
+      }
+      if (
+        !Number.isFinite(params.paddingRatio) ||
+        params.paddingRatio < 0 ||
+        params.paddingRatio > 0.2
+      ) {
+        errors.push("Watermark padding must be between 0 and 0.2.");
+      }
+      if (![400, 600, 700, 800].includes(params.fontWeight)) {
+        errors.push("Watermark font weight is not supported.");
+      }
+      if (typeof params.italic !== "boolean")
+        errors.push("Watermark italic must be true or false.");
       break;
     }
     case "watermark-image": {
@@ -193,6 +341,106 @@ export function validateOperation(operation: Operation): string[] {
       ) {
         errors.push("Watermark margin must be between 0 and 0.5.");
       }
+      break;
+    }
+    case "adjust": {
+      const params = operation.params;
+      const names: [string, number][] = [
+        ["Brightness", params.brightness],
+        ["Contrast", params.contrast],
+        ["Saturation", params.saturation],
+        ["Temperature", params.temperature],
+        ["Exposure", params.exposure],
+        ["Highlights", params.highlights],
+        ["Shadows", params.shadows],
+        ["Tint", params.tint],
+        ["Vibrance", params.vibrance],
+      ];
+      for (const [name, value] of names) {
+        if (!Number.isFinite(value) || value < -100 || value > 100) {
+          errors.push(`${name} must be between -100 and 100.`);
+        }
+      }
+      if (!Number.isFinite(params.gamma) || params.gamma < 0.2 || params.gamma > 3) {
+        errors.push("Gamma must be between 0.2 and 3.");
+      }
+      break;
+    }
+    case "filter": {
+      const presets = [
+        "grayscale",
+        "sepia",
+        "invert",
+        "blur",
+        "sharpen",
+        "emboss",
+        "edge",
+        "posterize",
+        "vignette",
+      ];
+      if (!presets.includes(operation.params.preset)) errors.push("Unknown filter preset.");
+      if (
+        !Number.isFinite(operation.params.intensity) ||
+        operation.params.intensity < 0 ||
+        operation.params.intensity > 1
+      ) {
+        errors.push("Filter intensity must be between 0 and 1.");
+      }
+      break;
+    }
+    case "shape": {
+      const params = operation.params;
+      if (!["rectangle", "ellipse", "line", "arrow"].includes(params.shape)) {
+        errors.push("Unknown shape type.");
+      }
+      for (const [name, value] of [
+        ["Shape x", params.x],
+        ["Shape y", params.y],
+        ["Shape width", params.width],
+        ["Shape height", params.height],
+      ] as const) {
+        if (!Number.isFinite(value)) errors.push(`${name} must be a number.`);
+      }
+      if (params.width <= 0 || params.height <= 0) {
+        errors.push("Shape width and height must be greater than zero.");
+      }
+      if (
+        params.x < 0 ||
+        params.y < 0 ||
+        params.x + params.width > 1.000001 ||
+        params.y + params.height > 1.000001
+      ) {
+        errors.push("Shape must stay within the image bounds.");
+      }
+      if (!Number.isFinite(params.opacity) || params.opacity < 0 || params.opacity > 1) {
+        errors.push("Shape opacity must be between 0 and 1.");
+      }
+      if (
+        !Number.isFinite(params.strokeWidthRatio) ||
+        params.strokeWidthRatio < 0 ||
+        params.strokeWidthRatio > 0.1
+      ) {
+        errors.push("Shape stroke width must be between 0 and 0.1.");
+      }
+      if (params.fill.trim().length === 0 || params.stroke.trim().length === 0) {
+        errors.push("Shape colours cannot be empty.");
+      }
+      break;
+    }
+    case "border": {
+      const params = operation.params;
+      if (
+        !Number.isFinite(params.widthRatio) ||
+        params.widthRatio < 0 ||
+        params.widthRatio > 0.25
+      ) {
+        errors.push("Border width must be between 0 and 0.25.");
+      }
+      if (!Number.isFinite(params.opacity) || params.opacity < 0 || params.opacity > 1) {
+        errors.push("Border opacity must be between 0 and 1.");
+      }
+      if (params.color.trim().length === 0) errors.push("Border colour cannot be empty.");
+      if (typeof params.inset !== "boolean") errors.push("Border inset must be true or false.");
       break;
     }
   }
@@ -228,6 +476,22 @@ export function operationLabel(operation: Operation): string {
       return "Text watermark";
     case "watermark-image":
       return "Image watermark";
+    case "adjust":
+      return "Adjust";
+    case "filter":
+      return "Filter";
+    case "shape":
+      return "Shape";
+    case "border":
+      return "Border";
+    case "chroma-key":
+      return "Chroma key";
+    case "warp":
+      return "Perspective & distort";
+    case "mask-effect":
+      return "Masked effect";
+    case "quantize":
+      return "Quantize";
   }
 }
 
@@ -242,13 +506,49 @@ export function describeOperation(operation: Operation): string {
     case "crop":
       return `${Math.round(operation.params.width * 100)}% × ${Math.round(operation.params.height * 100)}%`;
     case "rotate":
-      return `${operation.params.angle}°`;
+      return `${operation.params.angle}°${operation.params.background ? " · filled" : ""}`;
     case "flip":
       return operation.params.direction;
     case "watermark-text":
       return `“${operation.params.text}” · ${operation.params.anchor}`;
     case "watermark-image":
       return `${Math.round(operation.params.scaleRatio * 100)}% width · ${operation.params.anchor}`;
+    case "adjust": {
+      const params = operation.params;
+      const entries: [string, number][] = [
+        ["Brightness", params.brightness],
+        ["Contrast", params.contrast],
+        ["Saturation", params.saturation],
+        ["Temperature", params.temperature],
+        ["Exposure", params.exposure],
+        ["Highlights", params.highlights],
+        ["Shadows", params.shadows],
+        ["Tint", params.tint],
+        ["Vibrance", params.vibrance],
+      ];
+      const active = entries.filter(([, value]) => Math.abs(value) > 0.001);
+      if (params.gamma !== 1) active.push(["Gamma", params.gamma - 1]);
+      if (active.length === 0) return "No adjustments";
+      return active
+        .slice(0, 2)
+        .map(([label, value]) => `${label} ${value > 0 ? "+" : ""}${Math.round(value * 10) / 10}`)
+        .concat(active.length > 2 ? [`+${active.length - 2} more`] : [])
+        .join(" · ");
+    }
+    case "filter":
+      return `${operation.params.preset} · ${Math.round(operation.params.intensity * 100)}%`;
+    case "shape":
+      return `${operation.params.shape} · ${Math.round(operation.params.width * 100)}% × ${Math.round(operation.params.height * 100)}%`;
+    case "border":
+      return `${Math.round(operation.params.widthRatio * 1000) / 10}% · ${operation.params.inset ? "inset" : "outset"}`;
+    case "chroma-key":
+      return `${operation.params.color} · ${operation.params.tolerance}% tolerance`;
+    case "warp":
+      return `P ${operation.params.perspective} · D ${operation.params.distortion}`;
+    case "mask-effect":
+      return `${operation.params.effect} · ${operation.params.feather}% feather`;
+    case "quantize":
+      return `${operation.params.colors} colours · ${operation.params.dither}`;
   }
 }
 

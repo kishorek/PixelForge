@@ -11,5 +11,13 @@ export {
   validateOutputBlob,
 } from "./inspect";
 export type { BlobValidation, DimensionValidation } from "./inspect";
+export {
+  parseExifMetadata,
+  parseJpegMetadata,
+  parsePngMetadata,
+  parseWebpMetadata,
+  readImageMetadata,
+} from "./metadata";
+export type { ImageMetadata, MetadataField } from "./metadata";
 export { zipFiles } from "./zip";
 export type { ZipSource } from "./zip";

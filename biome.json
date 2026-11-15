@@ -30,6 +30,18 @@
   "organizeImports": {
     "enabled": true
   },
+  "overrides": [
+    {
+      "include": ["apps/web/src/components/PreviewStage.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noNoninteractiveTabindex": "off"
+          }
+        }
+      }
+    }
+  ],
   "linter": {
     "enabled": true,
     "rules": {

@@ -26,6 +26,8 @@ export interface FilenameInfo {
   height: number;
   format: ImageFormat;
   index: number;
+  row?: number;
+  column?: number;
 }
 
 export function formatFilename(template: string, info: FilenameInfo): string {
@@ -38,7 +40,9 @@ export function formatFilename(template: string, info: FilenameInfo): string {
     .replaceAll("{width}", String(Math.round(info.width)))
     .replaceAll("{height}", String(Math.round(info.height)))
     .replaceAll("{format}", extension)
-    .replaceAll("{index}", String(info.index));
+    .replaceAll("{index}", String(info.index))
+    .replaceAll("{row}", info.row === undefined ? "" : String(info.row))
+    .replaceAll("{column}", info.column === undefined ? "" : String(info.column));
 
   stem = sanitise(stem);
   if (stem.length === 0) stem = base;

@@ -133,14 +133,32 @@ export function outputDimensions(
       case "crop":
         current = applyCropToDimensions(current, operation.params);
         break;
-      case "rotate":
-        if (operation.params.angle === 90 || operation.params.angle === 270) {
+      case "rotate": {
+        const normalized = ((operation.params.angle % 360) + 360) % 360;
+        if (normalized === 90 || normalized === 270) {
           current = { width: current.height, height: current.width };
+        } else if (normalized !== 0 && normalized !== 180) {
+          const radians = (normalized * Math.PI) / 180;
+          const cosine = Math.abs(Math.cos(radians));
+          const sine = Math.abs(Math.sin(radians));
+          current = {
+            width: Math.max(1, Math.round(current.width * cosine + current.height * sine)),
+            height: Math.max(1, Math.round(current.width * sine + current.height * cosine)),
+          };
         }
         break;
+      }
       case "flip":
       case "watermark-text":
       case "watermark-image":
+      case "adjust":
+      case "filter":
+      case "shape":
+      case "border":
+      case "chroma-key":
+      case "warp":
+      case "mask-effect":
+      case "quantize":
         break;
     }
   }
@@ -150,10 +168,24 @@ export function outputDimensions(
 type OperationLike =
   | { type: "resize"; enabled: boolean; params: ResizeParams }
   | { type: "crop"; enabled: boolean; params: CropParams }
-  | { type: "rotate"; enabled: boolean; params: { angle: 90 | 180 | 270 } }
+  | { type: "rotate"; enabled: boolean; params: { angle: number; background?: string | null } }
   | { type: "flip"; enabled: boolean; params: { direction: "horizontal" | "vertical" } }
   | { type: "watermark-text"; enabled: boolean; params: unknown }
-  | { type: "watermark-image"; enabled: boolean; params: unknown };
+  | { type: "watermark-image"; enabled: boolean; params: unknown }
+  | { type: "adjust"; enabled: boolean; params: unknown }
+  | { type: "filter"; enabled: boolean; params: unknown }
+  | { type: "shape"; enabled: boolean; params: unknown }
+  | { type: "border"; enabled: boolean; params: unknown }
+  | { type: "chroma-key"; enabled: boolean; params: unknown }
+  | { type: "warp"; enabled: boolean; params: unknown }
+  | { type: "mask-effect"; enabled: boolean; params: unknown }
+  | { type: "quantize"; enabled: boolean; params: unknown };
 
 export const FIT_MODES: readonly FitMode[] = ["contain", "cover", "stretch"];
-export const RESAMPLING_METHODS = ["nearest", "bilinear", "box"] as const;
+export const RESAMPLING_METHODS = [
+  "nearest",
+  "bilinear",
+  "box",
+  "lanczos3",
+  "catmull-rom",
+] as const;

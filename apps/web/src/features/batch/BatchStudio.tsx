@@ -9,19 +9,38 @@ import {
   operationLabel,
   outputDimensions,
 } from "@pixelforge/operation-model";
-import { Download, FileArchive, Play } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Download,
+  Eye,
+  EyeOff,
+  FileArchive,
+  Play,
+  Trash2,
+} from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { ExportSettingsFields } from "../../components/ExportPanel";
 import { OperationFields } from "../../components/OperationFields";
 import { AddOperationMenu } from "../../components/OperationStack";
 import { PreviewStage } from "../../components/PreviewStage";
 import { Workbench } from "../../components/Workbench";
-import { Alert, Badge, Button, ProgressBar } from "../../components/ui";
+import {
+  Alert,
+  Badge,
+  Button,
+  IconButton,
+  ProgressBar,
+  SelectField,
+  TextField,
+} from "../../components/ui";
 import { usePreview } from "../../hooks/usePreview";
 import { asPixelForgeError, newId } from "../../lib/errors";
 import { safeOutputDimensions, sourceDimensionsFor } from "../../lib/operations";
 import { activeAssetOf, useSession } from "../../state/session";
 import { imageProcessor } from "../../workers/client";
+import { useRecipes } from "../recipes/useRecipes";
 
 type BatchStatus = "queued" | "processing" | "done" | "error";
 
@@ -81,13 +100,48 @@ function BatchRecipe({
                 <span className="op-item__detail">{describeOperation(operation)}</span>
               </button>
               <div className="op-item__actions" style={{ opacity: 1 }}>
-                <Button
-                  size="sm"
-                  variant="ghost"
+                <IconButton
+                  label="Move operation up"
+                  disabled={index === 0}
+                  onClick={() => {
+                    const next = [...operations];
+                    const [moved] = next.splice(index, 1);
+                    if (moved) next.splice(index - 1, 0, moved);
+                    onChange(next);
+                  }}
+                >
+                  <ChevronUp size={14} />
+                </IconButton>
+                <IconButton
+                  label="Move operation down"
+                  disabled={index === operations.length - 1}
+                  onClick={() => {
+                    const next = [...operations];
+                    const [moved] = next.splice(index, 1);
+                    if (moved) next.splice(index + 1, 0, moved);
+                    onChange(next);
+                  }}
+                >
+                  <ChevronDown size={14} />
+                </IconButton>
+                <IconButton
+                  label={operation.enabled ? "Disable operation" : "Enable operation"}
+                  onClick={() =>
+                    onChange(
+                      operations.map((item) =>
+                        item.id === operation.id ? { ...item, enabled: !item.enabled } : item,
+                      ),
+                    )
+                  }
+                >
+                  {operation.enabled ? <Eye size={14} /> : <EyeOff size={14} />}
+                </IconButton>
+                <IconButton
+                  label="Remove operation"
                   onClick={() => onChange(operations.filter((item) => item.id !== operation.id))}
                 >
-                  Remove
-                </Button>
+                  <Trash2 size={14} />
+                </IconButton>
               </div>
             </li>
           ))}
@@ -103,6 +157,7 @@ export function BatchStudio() {
   const batchOperations = useSession((state) => state.batchOperations);
   const setBatchOperations = useSession((state) => state.setBatchOperations);
   const exportSettings = useSession((state) => state.exportSettings);
+  const setExport = useSession((state) => state.setExport);
   const watermarkImage = useSession((state) => state.watermarkImage);
 
   const [statuses, setStatuses] = useState<Record<string, BatchStatus>>({});
@@ -112,6 +167,11 @@ export function BatchStudio() {
   const [running, setRunning] = useState(false);
   const [completed, setCompleted] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [recipeName, setRecipeName] = useState("");
+  const [selectedRecipe, setSelectedRecipe] = useState("");
+  const [recipeMessage, setRecipeMessage] = useState<string | null>(null);
+  const [recipeError, setRecipeError] = useState<string | null>(null);
+  const { recipes, saveRecipe } = useRecipes();
   const stopRef = useRef(false);
 
   const preview = usePreview(activeAsset, batchOperations, watermarkImage);
@@ -158,6 +218,29 @@ export function BatchStudio() {
 
   const selectedOperation =
     batchOperations.find((operation) => operation.id === selectedId) ?? batchOperations[0] ?? null;
+
+  const saveCurrentRecipe = () => {
+    try {
+      const name = recipeName.trim() || "Batch recipe";
+      saveRecipe(name, batchOperations, exportSettings);
+      setRecipeName("");
+      setSelectedRecipe(name);
+      setRecipeError(null);
+      setRecipeMessage(`Saved recipe “${name}”.`);
+    } catch (saveError) {
+      setRecipeMessage(null);
+      setRecipeError(saveError instanceof Error ? saveError.message : String(saveError));
+    }
+  };
+
+  const applySavedRecipe = () => {
+    const recipe = recipes.find((candidate) => candidate.name === selectedRecipe);
+    if (!recipe) return;
+    setBatchOperations(recipe.operations.map((operation) => structuredClone(operation)));
+    if (recipe.export) setExport(recipe.export);
+    setRecipeError(null);
+    setRecipeMessage(`Loaded recipe “${recipe.name}”.`);
+  };
 
   const queueStatus = useMemo(() => {
     const map: Record<string, ReactNode> = {};
@@ -385,6 +468,57 @@ export function BatchStudio() {
                   )
                 }
               />
+            ) : null}
+          </section>
+
+          <section className="inspector-section">
+            <h2 className="inspector-section__title">Recipes</h2>
+            {recipes.length > 0 ? (
+              <>
+                <SelectField
+                  id="batch-saved-recipe"
+                  label="Saved recipes"
+                  value={selectedRecipe}
+                  options={[
+                    { value: "", label: "Choose a saved recipe…" },
+                    ...recipes.map((recipe) => ({
+                      value: recipe.name,
+                      label: `${recipe.name} · ${recipe.operations.length} op${recipe.operations.length === 1 ? "" : "s"}`,
+                    })),
+                  ]}
+                  onChange={setSelectedRecipe}
+                />
+                <Button size="sm" disabled={!selectedRecipe} onClick={applySavedRecipe}>
+                  Apply saved recipe
+                </Button>
+                <div className="divider" />
+              </>
+            ) : (
+              <p className="field__hint">
+                Save the current pipeline as a recipe, or import one from the Presets page.
+              </p>
+            )}
+            <TextField
+              id="batch-recipe-name"
+              label="Recipe name"
+              value={recipeName}
+              placeholder="Web export, Client A…"
+              onChange={setRecipeName}
+              maxLength={120}
+            />
+            <div className="row">
+              <Button size="sm" variant="primary" onClick={saveCurrentRecipe}>
+                Save current recipe
+              </Button>
+              <Link className="btn btn--sm btn--ghost" to="/presets">
+                Manage recipes
+              </Link>
+            </div>
+            {recipeMessage ? <Alert tone="ok">{recipeMessage}</Alert> : null}
+            {recipeError ? (
+              <Alert tone="danger" title="Recipe error">
+                {recipeError}
+              </Alert>
             ) : null}
           </section>
 

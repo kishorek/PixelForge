@@ -15,6 +15,7 @@ import type {
 } from "@pixelforge/image-contracts";
 import { clamp01, resizePipeline } from "@pixelforge/operation-model";
 import type { PixelforgeWasm, ResamplingMethodCode } from "../wasm/loader";
+import { quantizePixels } from "./quantize";
 
 export interface RenderSource {
   source: CanvasImageSource;
@@ -31,6 +32,7 @@ export interface WatermarkSource {
 export interface RenderOptions {
   wasm: PixelforgeWasm;
   watermarkImage?: WatermarkSource | null;
+  maskBitmaps?: Map<string, ImageBitmap>;
   onStage?: (stage: Operation["type"]) => void;
 }
 
@@ -44,6 +46,8 @@ const METHOD_CODES: Record<ResamplingMethod, ResamplingMethodCode> = {
   nearest: 0,
   bilinear: 1,
   box: 2,
+  lanczos3: 3,
+  "catmull-rom": 4,
 };
 
 function imageDataOf(canvas: CanvasLike, width: number, height: number): ImageData {
@@ -133,22 +137,43 @@ function rotateCanvas(
   canvas: CanvasLike,
   width: number,
   height: number,
-  angle: 90 | 180 | 270,
+  angle: number,
+  background: string | null,
   wasm: PixelforgeWasm,
 ): RenderResult {
-  if (angle === 180) {
+  const normalized = ((angle % 360) + 360) % 360;
+  if (normalized === 0) return { canvas, width, height };
+  if (normalized === 180) {
     flipCanvas(canvas, width, height, true, wasm);
     flipCanvas(canvas, width, height, false, wasm);
     return { canvas, width, height };
   }
-  const pixels = imageDataOf(canvas, width, height);
-  const output = wasm.rotate90(
-    new Uint8Array(pixels.data.buffer, pixels.data.byteOffset, pixels.data.byteLength),
-    width,
-    height,
-    angle === 90,
-  );
-  return { canvas: canvasFromPixels(output, height, width), width: height, height: width };
+  if (normalized === 90 || normalized === 270) {
+    const pixels = imageDataOf(canvas, width, height);
+    const output = wasm.rotate90(
+      new Uint8Array(pixels.data.buffer, pixels.data.byteOffset, pixels.data.byteLength),
+      width,
+      height,
+      normalized === 90,
+    );
+    return { canvas: canvasFromPixels(output, height, width), width: height, height: width };
+  }
+
+  const radians = (normalized * Math.PI) / 180;
+  const cosine = Math.abs(Math.cos(radians));
+  const sine = Math.abs(Math.sin(radians));
+  const outputWidth = Math.max(1, Math.round(width * cosine + height * sine));
+  const outputHeight = Math.max(1, Math.round(width * sine + height * cosine));
+  const output = createCanvas(outputWidth, outputHeight);
+  const context = get2dContext(output);
+  if (background) {
+    context.fillStyle = background;
+    context.fillRect(0, 0, outputWidth, outputHeight);
+  }
+  context.translate(outputWidth / 2, outputHeight / 2);
+  context.rotate(radians);
+  context.drawImage(canvas as CanvasImageSource, -width / 2, -height / 2, width, height);
+  return { canvas: output, width: outputWidth, height: outputHeight };
 }
 
 function anchorPosition(
@@ -186,6 +211,175 @@ function anchorPosition(
     case "bottom-right":
       return { x: right, y: bottom };
   }
+}
+
+function applyPixelOperation(
+  canvas: CanvasLike,
+  width: number,
+  height: number,
+  transform: (pixels: Uint8Array) => Uint8Array | Uint8ClampedArray,
+): void {
+  const context = get2dContext(canvas);
+  const image = context.getImageData(0, 0, width, height);
+  const input = new Uint8Array(image.data.buffer, image.data.byteOffset, image.data.byteLength);
+  const output = transform(input);
+  context.putImageData(new ImageData(new Uint8ClampedArray(output), width, height), 0, 0);
+}
+
+function applyMaskEffect(
+  canvas: CanvasLike,
+  width: number,
+  height: number,
+  params: {
+    effect: "erase" | "blur" | "sharpen";
+    feather: number;
+    invert: boolean;
+  },
+  maskBitmap: ImageBitmap,
+  wasm: PixelforgeWasm,
+): void {
+  const maskCanvas = createCanvas(width, height);
+  const maskContext = get2dContext(maskCanvas);
+  maskContext.fillStyle = "#000000";
+  maskContext.fillRect(0, 0, width, height);
+  maskContext.drawImage(maskBitmap, 0, 0, width, height);
+  const maskImage = maskContext.getImageData(0, 0, width, height);
+  let maskPixels: Uint8Array = new Uint8Array(
+    maskImage.data.buffer,
+    maskImage.data.byteOffset,
+    maskImage.data.byteLength,
+  );
+  if (params.feather > 0) {
+    maskPixels = wasm.filter(maskPixels, width, height, "blur", params.feather / 100);
+  }
+
+  const context = get2dContext(canvas);
+  const image = context.getImageData(0, 0, width, height);
+  const pixels = new Uint8Array(image.data.buffer, image.data.byteOffset, image.data.byteLength);
+
+  if (params.effect === "erase") {
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      let mask = (maskPixels[offset] ?? 0) / 255;
+      if (params.invert) mask = 1 - mask;
+      image.data[offset + 3] = Math.round((pixels[offset + 3] ?? 0) * (1 - mask));
+    }
+  } else {
+    const filtered = wasm.filter(pixels, width, height, params.effect, 1);
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      let mask = (maskPixels[offset] ?? 0) / 255;
+      if (params.invert) mask = 1 - mask;
+      for (let channel = 0; channel < 3; channel += 1) {
+        const original = pixels[offset + channel] ?? 0;
+        const effectValue = filtered[offset + channel] ?? original;
+        image.data[offset + channel] = Math.round(original + (effectValue - original) * mask);
+      }
+    }
+  }
+  context.putImageData(image, 0, 0);
+}
+
+function drawShape(
+  context: Context2D,
+  width: number,
+  height: number,
+  params: {
+    shape: "rectangle" | "ellipse" | "line" | "arrow";
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    fill: string;
+    stroke: string;
+    strokeWidthRatio: number;
+    opacity: number;
+  },
+): void {
+  const x = params.x * width;
+  const y = params.y * height;
+  const shapeWidth = params.width * width;
+  const shapeHeight = params.height * height;
+  const lineWidth = Math.max(1, params.strokeWidthRatio * Math.min(width, height));
+
+  context.save();
+  context.globalAlpha = params.opacity;
+  context.fillStyle = params.fill;
+  context.strokeStyle = params.stroke;
+  context.lineWidth = lineWidth;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  switch (params.shape) {
+    case "rectangle":
+      context.fillRect(x, y, shapeWidth, shapeHeight);
+      context.strokeRect(
+        x + lineWidth / 2,
+        y + lineWidth / 2,
+        Math.max(0, shapeWidth - lineWidth),
+        Math.max(0, shapeHeight - lineWidth),
+      );
+      break;
+    case "ellipse":
+      context.beginPath();
+      context.ellipse(
+        x + shapeWidth / 2,
+        y + shapeHeight / 2,
+        Math.max(0.5, shapeWidth / 2),
+        Math.max(0.5, shapeHeight / 2),
+        0,
+        0,
+        Math.PI * 2,
+      );
+      context.fill();
+      context.stroke();
+      break;
+    case "line":
+      context.beginPath();
+      context.moveTo(x, y);
+      context.lineTo(x + shapeWidth, y + shapeHeight);
+      context.stroke();
+      break;
+    case "arrow": {
+      const endX = x + shapeWidth;
+      const endY = y + shapeHeight;
+      const angle = Math.atan2(shapeHeight, shapeWidth);
+      const head = Math.max(10, lineWidth * 4);
+      context.beginPath();
+      context.moveTo(x, y);
+      context.lineTo(endX, endY);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(endX, endY);
+      context.lineTo(
+        endX - head * Math.cos(angle - Math.PI / 6),
+        endY - head * Math.sin(angle - Math.PI / 6),
+      );
+      context.moveTo(endX, endY);
+      context.lineTo(
+        endX - head * Math.cos(angle + Math.PI / 6),
+        endY - head * Math.sin(angle + Math.PI / 6),
+      );
+      context.stroke();
+      break;
+    }
+  }
+  context.restore();
+}
+
+function drawBorder(
+  context: Context2D,
+  width: number,
+  height: number,
+  params: { widthRatio: number; color: string; opacity: number; inset: boolean },
+): void {
+  const borderWidth = params.widthRatio * Math.min(width, height);
+  if (borderWidth <= 0) return;
+  const offset = params.inset ? borderWidth / 2 : -borderWidth / 2;
+  context.save();
+  context.globalAlpha = params.opacity;
+  context.strokeStyle = params.color;
+  context.lineWidth = borderWidth;
+  context.strokeRect(offset, offset, width - offset * 2, height - offset * 2);
+  context.restore();
 }
 
 function drawTextWatermark(
@@ -309,7 +503,14 @@ export function renderOperations(
         break;
       }
       case "rotate": {
-        const rotated = rotateCanvas(canvas, width, height, operation.params.angle, options.wasm);
+        const rotated = rotateCanvas(
+          canvas,
+          width,
+          height,
+          operation.params.angle,
+          operation.params.background ?? null,
+          options.wasm,
+        );
         canvas = rotated.canvas;
         width = rotated.width;
         height = rotated.height;
@@ -337,6 +538,50 @@ export function renderOperations(
             options.watermarkImage,
           );
         }
+        break;
+      case "adjust":
+        applyPixelOperation(canvas, width, height, (pixels) =>
+          options.wasm.adjust(pixels, width, height, operation.params),
+        );
+        break;
+      case "filter":
+        applyPixelOperation(canvas, width, height, (pixels) =>
+          options.wasm.filter(
+            pixels,
+            width,
+            height,
+            operation.params.preset,
+            operation.params.intensity,
+          ),
+        );
+        break;
+      case "shape":
+        drawShape(get2dContext(canvas), width, height, operation.params);
+        break;
+      case "border":
+        drawBorder(get2dContext(canvas), width, height, operation.params);
+        break;
+      case "chroma-key":
+        applyPixelOperation(canvas, width, height, (pixels) =>
+          options.wasm.chromaKey(pixels, width, height, operation.params),
+        );
+        break;
+      case "warp":
+        applyPixelOperation(canvas, width, height, (pixels) =>
+          options.wasm.warp(pixels, width, height, operation.params),
+        );
+        break;
+      case "mask-effect": {
+        const mask = options.maskBitmaps?.get(operation.id);
+        if (mask) {
+          applyMaskEffect(canvas, width, height, operation.params, mask, options.wasm);
+        }
+        break;
+      }
+      case "quantize":
+        applyPixelOperation(canvas, width, height, (pixels) =>
+          quantizePixels(pixels, width, height, operation.params),
+        );
         break;
     }
     options.onStage?.(operation.type);

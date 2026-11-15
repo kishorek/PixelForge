@@ -131,7 +131,7 @@ describe("dimension helpers", () => {
         enabled: true,
         params: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
       },
-      { id: "3", type: "rotate", enabled: true, params: { angle: 90 } },
+      { id: "3", type: "rotate", enabled: true, params: { angle: 90, background: null } },
       { id: "4", type: "flip", enabled: true, params: { direction: "horizontal" } },
     ];
     expect(outputDimensions({ width: 4000, height: 3000 }, operations)).toEqual({
@@ -142,7 +142,7 @@ describe("dimension helpers", () => {
 
   it("ignores disabled operations", () => {
     const operations: Operation[] = [
-      { id: "1", type: "rotate", enabled: false, params: { angle: 90 } },
+      { id: "1", type: "rotate", enabled: false, params: { angle: 90, background: null } },
     ];
     expect(outputDimensions({ width: 400, height: 300 }, operations)).toEqual({
       width: 400,
@@ -197,9 +197,32 @@ describe("validateOperation", () => {
         anchor: "center",
         marginRatio: 0.04,
         tile: false,
+        background: null,
+        paddingRatio: 0.02,
+        fontWeight: 600,
+        italic: false,
       },
     });
     expect(errors.join(" ")).toMatch(/opacity/i);
+  });
+
+  it("accepts valid adjustments and filters", () => {
+    expect(validateOperation(createOperation("adjust", { width: 100, height: 100 }))).toEqual([]);
+    expect(validateOperation(createOperation("filter", { width: 100, height: 100 }))).toEqual([]);
+  });
+
+  it("rejects out-of-range adjustments", () => {
+    const operation = createOperation("adjust", { width: 100, height: 100 }, { brightness: 150 });
+    expect(validateOperation(operation).join(" ")).toMatch(/brightness/i);
+  });
+
+  it("rejects shapes outside the image", () => {
+    const operation = createOperation(
+      "shape",
+      { width: 100, height: 100 },
+      { x: 0.9, y: 0.9, width: 0.4, height: 0.4 },
+    );
+    expect(validateOperation(operation).join(" ")).toMatch(/bounds/i);
   });
 });
 
@@ -233,11 +256,21 @@ describe("createOperation", () => {
 
 describe("labels", () => {
   it("labels and describes operations for the UI", () => {
-    expect(operationLabel({ id: "r", type: "rotate", enabled: true, params: { angle: 90 } })).toBe(
-      "Rotate",
-    );
     expect(
-      describeOperation({ id: "r", type: "rotate", enabled: true, params: { angle: 270 } }),
+      operationLabel({
+        id: "r",
+        type: "rotate",
+        enabled: true,
+        params: { angle: 90, background: null },
+      }),
+    ).toBe("Rotate");
+    expect(
+      describeOperation({
+        id: "r",
+        type: "rotate",
+        enabled: true,
+        params: { angle: 270, background: null },
+      }),
     ).toContain("270");
     expect(
       describeOperation({
@@ -357,5 +390,44 @@ describe("findTargetQuality", () => {
       { maxIterations: 3 },
     );
     expect(calls).toBeLessThanOrEqual(3);
+  });
+});
+
+describe("split filename tokens", () => {
+  it("expands row and column tokens", () => {
+    expect(
+      formatFilename("{name}-r{row}c{column}", {
+        name: "photo.jpg",
+        width: 600,
+        height: 400,
+        format: "png",
+        index: 1,
+        row: 2,
+        column: 3,
+      }),
+    ).toBe("photo-r2c3.png");
+  });
+});
+
+describe("arbitrary rotation bounds", () => {
+  it("expands dimensions for a 45 degree rotation", () => {
+    const operations: Operation[] = [
+      { id: "r", type: "rotate", enabled: true, params: { angle: 45, background: null } },
+    ];
+    expect(outputDimensions({ width: 100, height: 50 }, operations)).toEqual({
+      width: 106,
+      height: 106,
+    });
+  });
+
+  it("treats 0 and 360 degrees as a no-op", () => {
+    const operations: Operation[] = [
+      { id: "a", type: "rotate", enabled: true, params: { angle: 0, background: null } },
+      { id: "b", type: "rotate", enabled: true, params: { angle: 360, background: null } },
+    ];
+    expect(outputDimensions({ width: 100, height: 50 }, operations)).toEqual({
+      width: 100,
+      height: 50,
+    });
   });
 });

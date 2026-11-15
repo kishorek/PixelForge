@@ -57,6 +57,7 @@ export function Dropzone({
       <div>
         <div className="dropzone__title">{title}</div>
         <div className="dropzone__hint">{hint}</div>
+        <div className="field__hint">You can also paste an image with Ctrl/Cmd+V.</div>
       </div>
       <Button variant="primary" loading={busy} onClick={() => inputRef.current?.click()}>
         {busy ? "Importing…" : "Choose images"}

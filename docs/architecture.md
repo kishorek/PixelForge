@@ -50,7 +50,7 @@ These packages have no React dependency and are unit tested directly.
 3. Decode the source with `createImageBitmap`.
 4. Compute final output dimensions and, for previews, a scale factor.
 5. Scale absolute resize targets for preview rendering so parameters stay consistent.
-6. Render operations in order with WASM pixel operations and canvas composition.
+6. Render operations in order with WASM resize/transform/adjust/filter operations and canvas composition for overlays.
 7. Flatten transparency for JPEG exports.
 8. Encode at the requested quality or run the bounded target-size search.
 9. Return a Blob, dimensions, actual quality and whether the target was met.
@@ -72,10 +72,67 @@ The engine is a freestanding `wasm32` module with a deliberately small pointer-b
 - RGBA buffer validation and allocation.
 - Bilinear, box and nearest resampling.
 - Normalized crop, horizontal/vertical flip and right-angle rotation.
+- Tone and colour adjustments for exposure, contrast, saturation, temperature, highlights, shadows, tint, gamma and vibrance.
+- Filters: grayscale, sepia, invert, blur, sharpen, emboss, edge, posterize and vignette.
+- RGB and luminance histograms.
 - Colour conversion helpers and luminance used by the engine tests.
 
-Watermark rendering, font handling, image decoding and encoding stay in the browser, where mature
-platform APIs already exist.
+Shape, border, caption, watermark and collage rendering, font handling, image decoding and encoding
+stay in the browser, where mature platform APIs already exist.
+
+### Colour analysis
+
+The Colour workspace draws the processed preview into a canvas, computes RGB and luminance
+histograms with the WASM engine (falling back to JavaScript if needed), samples pixels under the
+pointer or from numeric coordinates, and extracts a quantised dominant palette. Analysis uses the
+preview resolution; export remains full resolution.
+
+### Collage and before/after composition
+
+Collage layout math lives in a pure module with unit tests. The composer decodes each source image
+sequentially, draws it into a cell with cover or contain fitting, and encodes the result with the
+same browser encoders as single-image export. The before/after mode renders the active image's
+operation pipeline at full resolution before composing it with the original.
+
+## Recipes and local data
+
+Batch pipelines can be saved as versioned recipes with `createRecipe`, validated on import with
+`parseRecipe`, and persisted in local storage under `pixelforge.recipes`. Applying a recipe restores
+its ordered operation list and optional export settings. Import rejects unknown operation types,
+malformed parameters, oversized payloads and unsupported schema versions.
+
+## Metadata and transparency
+
+The metadata service reads the first 4 MB of PNG, JPEG and WebP files, parses container chunks and
+common EXIF tags, and groups results for the inspector. Exports are re-encoded through the browser
+canvas, which removes container, EXIF and ICC metadata; the UI states this explicitly. Colour
+analysis also reports alpha fractions, alpha range and non-transparent content bounds.
+
+## Editor zoom and arbitrary rotation
+
+Right-angle rotations use the WASM transform path. Arbitrary angles render through a canvas
+transform, expanding the canvas to the rotated bounds and optionally filling exposed corners.
+The Editor viewport supports fit-to-screen, 100% preview-pixel scale, step zoom and pointer panning.
+Zoom operates on the reduced-resolution preview; export remains full resolution.
+
+## Advanced processing
+
+Advanced resampling adds Lanczos 3 and Catmull-Rom kernels through a scratch-buffer ABI. Chroma
+keying compares RGB distance to a selected colour and supports tolerance, feathering, inversion
+and a replacement background. Masked effects store a normalized PNG mask with the operation; the
+worker decodes it, feathers it with the blur filter and applies erase, blur or sharpen only where
+the mask is white. Perspective/distortion uses an inverse keystone/radial mapping with bilinear
+sampling. Quantization extracts a k-means palette and supports ordered and Floyd–Steinberg
+dithering in JavaScript. All advanced effects are conventional image processing and are never
+described as semantic or AI-powered.
+
+## Comparison and composition
+
+The Compare workspace cover-fits both images to a common reduced size, computes a WASM channel
+difference and perceptual hashes (aHash and dHash), and reports mean/maximum difference and changed
+pixels. Contact sheet, merge and collage use the compose worker; split uses a split worker. All
+composition paths decode sources sequentially and close bitmaps after drawing. The print calculator
+is a pure unit-conversion module with tests.
 
 ## Preview and export consistency
 

@@ -40,6 +40,13 @@ pf_resize_rgba(
   method: u32
 ) -> u32
 
+pf_resize_kernel_rgba(
+  input, output, scratch,
+  width, height,
+  new_width, new_height,
+  method: u32
+) -> u32
+
 pf_crop_rgba(
   input, output,
   width, height,
@@ -48,6 +55,38 @@ pf_crop_rgba(
 
 pf_flip_rgba(buffer, width, height, horizontal: u32) -> u32
 pf_rotate90_rgba(input, output, width, height, clockwise: u32) -> u32
+
+pf_adjust_rgba(
+  buffer, width, height,
+  brightness, contrast, saturation, temperature, exposure,
+  highlights, shadows, tint, gamma, vibrance
+) -> u32
+
+pf_filter_rgba(
+  buffer, scratch, width, height,
+  filter: u32, intensity: f32
+) -> u32
+
+pf_histogram_rgba(buffer, width, height, output: *u32) -> u32
+
+pf_chroma_key_rgba(
+  buffer, width, height,
+  key_r, key_g, key_b,
+  tolerance, feather, invert,
+  background_r, background_g, background_b, has_background
+) -> u32
+
+pf_warp_rgba(
+  buffer, scratch, width, height,
+  perspective, distortion,
+  background_r, background_g, background_b, has_background
+) -> u32
+
+pf_diff_rgba(
+  a, b, output, width, height, amplify: f32
+) -> u32
+
+pf_perceptual_hash_rgba(buffer, width, height, output: *u32) -> u32
 ```
 
 ### Resampling methods
@@ -57,12 +96,38 @@ pf_rotate90_rgba(input, output, width, height, clockwise: u32) -> u32
 | 0 | Nearest | Pixel art and hard edges |
 | 1 | Bilinear | General smooth resampling |
 | 2 | Box | Crisp downscaling by averaging |
+| 3 | Lanczos 3 | High-quality resampling with a 6-tap kernel |
+| 4 | Catmull-Rom | Sharp bicubic-style resampling |
 
 ### Rotation
 
 `pf_rotate90_rgba` swaps the output dimensions: an input of `width × height` produces
 `height × width`. The caller must allocate the matching output buffer. A 180° rotation is implemented
 as a horizontal flip followed by a vertical flip.
+
+### Adjustments and filters
+
+`pf_adjust_rgba` applies tone and colour adjustments in place. Values are -100 to 100 except `gamma`,
+which is 0.2 to 3.
+
+`pf_filter_rgba` applies a filter in place and uses the caller-provided `scratch` buffer for blur and
+convolution passes. Codes: 0 grayscale, 1 sepia, 2 invert, 3 blur, 4 sharpen, 5 emboss, 6 edge,
+7 posterize, 8 vignette.
+
+`pf_resize_kernel_rgba` is used for Lanczos 3 and Catmull-Rom; `scratch` must hold
+`new_width × height × 4` bytes. `pf_chroma_key_rgba` applies the key in place; `pf_warp_rgba` uses a
+scratch copy of the source because the mapping is not in-place.
+
+### Histogram
+
+`pf_histogram_rgba` writes 4 × 256 `u32` counts in red, green, blue and luminance order. The output
+pointer must be 4-byte aligned; the JavaScript loader allocates extra space and aligns it.
+
+### Difference and perceptual hashing
+
+`pf_diff_rgba` writes amplified absolute channel differences into `output`, with alpha set to 255.
+`pf_perceptual_hash_rgba` writes four `u32` words: average-hash low/high and difference-hash
+low/high. Hamming distances are calculated in JavaScript.
 
 ## Status and error codes
 
@@ -89,4 +154,5 @@ npm run wasm:test    # runs the Zig unit tests
 ```
 
 The build fails if the artifact is missing. The verifier fails if required exports are absent, the ABI
-version is not 1, or the smoke test returns a non-zero status.
+version is not 1, or the resize, adjustment, filter, histogram or diff smoke tests return a
+non-zero status. Chroma key and warp are covered by the Zig unit tests.

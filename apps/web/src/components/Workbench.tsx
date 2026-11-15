@@ -2,6 +2,7 @@ import { formatBytes } from "@pixelforge/operation-model";
 import { ImagePlus, Trash2, X } from "lucide-react";
 import { type ReactNode, useRef } from "react";
 import { useImport } from "../hooks/useImport";
+import { usePasteImport } from "../hooks/usePasteImport";
 import { type SessionAsset, useSession } from "../state/session";
 import { Dropzone } from "./Dropzone";
 import { Alert, Badge, IconButton } from "./ui";
@@ -88,6 +89,7 @@ export function QueuePanel({ statusById }: { statusById?: Record<string, ReactNo
   const activeId = useSession((state) => state.activeId);
   const clearAssets = useSession((state) => state.clearAssets);
   const { importFiles, busy, errors, clearErrors } = useImport();
+  usePasteImport(importFiles);
 
   return (
     <>

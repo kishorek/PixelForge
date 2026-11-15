@@ -43,7 +43,12 @@ function isOperation(value: unknown): value is Operation {
         typeof params.height === "number"
       );
     case "rotate":
-      return typeof params.angle === "number";
+      return (
+        typeof params.angle === "number" &&
+        (params.background === undefined ||
+          params.background === null ||
+          typeof params.background === "string")
+      );
     case "flip":
       return typeof params.direction === "string";
     case "watermark-text":
@@ -55,7 +60,11 @@ function isOperation(value: unknown): value is Operation {
         typeof params.opacity === "number" &&
         typeof params.anchor === "string" &&
         typeof params.marginRatio === "number" &&
-        typeof params.tile === "boolean"
+        typeof params.tile === "boolean" &&
+        (params.background === null || typeof params.background === "string") &&
+        typeof params.paddingRatio === "number" &&
+        typeof params.fontWeight === "number" &&
+        typeof params.italic === "boolean"
       );
     case "watermark-image":
       return (
@@ -64,6 +73,63 @@ function isOperation(value: unknown): value is Operation {
         typeof params.anchor === "string" &&
         typeof params.marginRatio === "number" &&
         typeof params.tile === "boolean"
+      );
+    case "adjust":
+      return (
+        typeof params.brightness === "number" &&
+        typeof params.contrast === "number" &&
+        typeof params.saturation === "number" &&
+        typeof params.temperature === "number" &&
+        typeof params.exposure === "number" &&
+        typeof params.highlights === "number" &&
+        typeof params.shadows === "number" &&
+        typeof params.tint === "number" &&
+        typeof params.gamma === "number" &&
+        typeof params.vibrance === "number"
+      );
+    case "filter":
+      return typeof params.preset === "string" && typeof params.intensity === "number";
+    case "shape":
+      return (
+        typeof params.shape === "string" &&
+        typeof params.x === "number" &&
+        typeof params.y === "number" &&
+        typeof params.width === "number" &&
+        typeof params.height === "number" &&
+        typeof params.fill === "string" &&
+        typeof params.stroke === "string" &&
+        typeof params.strokeWidthRatio === "number" &&
+        typeof params.opacity === "number"
+      );
+    case "border":
+      return (
+        typeof params.widthRatio === "number" &&
+        typeof params.color === "string" &&
+        typeof params.opacity === "number" &&
+        typeof params.inset === "boolean"
+      );
+    case "quantize":
+      return typeof params.colors === "number" && typeof params.dither === "string";
+    case "mask-effect":
+      return (
+        typeof params.effect === "string" &&
+        typeof params.maskDataUrl === "string" &&
+        typeof params.feather === "number" &&
+        typeof params.invert === "boolean"
+      );
+    case "warp":
+      return (
+        typeof params.perspective === "number" &&
+        typeof params.distortion === "number" &&
+        (params.background === null || typeof params.background === "string")
+      );
+    case "chroma-key":
+      return (
+        typeof params.color === "string" &&
+        typeof params.tolerance === "number" &&
+        typeof params.feather === "number" &&
+        typeof params.invert === "boolean" &&
+        (params.background === null || typeof params.background === "string")
       );
     default:
       return false;

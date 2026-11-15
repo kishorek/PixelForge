@@ -73,6 +73,7 @@ export async function processImage(
   const wasm = preloadedEngine ?? (await loadPixelforgeWasm());
   const decoded = await decodeImage(request.source.blob);
   let watermarkBitmap: ImageBitmap | null = null;
+  const maskBitmaps = new Map<string, ImageBitmap>();
 
   try {
     const finalDimensions = outputDimensions(
@@ -102,15 +103,30 @@ export async function processImage(
       };
     }
 
+    for (const operation of operations) {
+      if (operation.type !== "mask-effect" || operation.params.maskDataUrl.length === 0) continue;
+      try {
+        const response = await fetch(operation.params.maskDataUrl);
+        const blob = await response.blob();
+        const bitmap = await createImageBitmap(blob);
+        maskBitmaps.set(operation.id, bitmap);
+      } catch {
+        // A missing or malformed mask simply skips the effect.
+      }
+    }
+
     report("resize", 0.15);
     const enabledCount = operations.filter((operation) => operation.enabled).length || 1;
     let rendered = 0;
     const renderedImage = renderOperations(source, operations, {
       wasm,
       watermarkImage: watermark,
-      onStage: () => {
+      maskBitmaps,
+      onStage: (stage) => {
         rendered += 1;
-        report("resize", 0.15 + (rendered / enabledCount) * 0.5);
+        const stageName: ProcessStage =
+          stage === "watermark-text" || stage === "watermark-image" ? "watermark" : stage;
+        report(stageName, 0.15 + (rendered / enabledCount) * 0.5);
       },
     });
 
@@ -183,5 +199,6 @@ export async function processImage(
   } finally {
     decoded.bitmap.close();
     watermarkBitmap?.close();
+    for (const bitmap of maskBitmaps.values()) bitmap.close();
   }
 }

@@ -49,6 +49,7 @@ export function EditorPage() {
           asset={asset}
           preview={preview}
           compare={compare}
+          zoomable
           emptyTitle="Open an image in the editor"
           emptyHint="Add an image from the queue on the left. Quick-tool edits carry over automatically."
         />

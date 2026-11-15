@@ -12,6 +12,14 @@ const ADDABLE: readonly { type: OperationType; label: string; hint: string }[] =
   { type: "flip", label: "Flip", hint: "Horizontal or vertical" },
   { type: "watermark-text", label: "Text watermark", hint: "Text, size, opacity" },
   { type: "watermark-image", label: "Image watermark", hint: "Logo overlay" },
+  { type: "adjust", label: "Adjust", hint: "Tone and colour" },
+  { type: "filter", label: "Filter", hint: "Creative look" },
+  { type: "shape", label: "Shape", hint: "Rectangle, ellipse, line, arrow" },
+  { type: "border", label: "Border", hint: "Frame the image" },
+  { type: "chroma-key", label: "Chroma key", hint: "Remove a background colour" },
+  { type: "warp", label: "Perspective & distort", hint: "Keystone and radial warp" },
+  { type: "mask-effect", label: "Masked effect", hint: "Erase, blur or sharpen through a mask" },
+  { type: "quantize", label: "Quantize", hint: "Limit colours and dither" },
 ];
 
 export function AddOperationMenu({

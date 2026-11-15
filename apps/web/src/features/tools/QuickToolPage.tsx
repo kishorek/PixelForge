@@ -1,6 +1,6 @@
 import { FORMATS } from "@pixelforge/image-contracts";
 import type { Operation } from "@pixelforge/image-contracts";
-import { createOperation } from "@pixelforge/operation-model";
+import { createOperation, describeOperation, operationLabel } from "@pixelforge/operation-model";
 import { Columns2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
@@ -9,7 +9,7 @@ import { OperationFields } from "../../components/OperationFields";
 import { OutputFooter } from "../../components/OutputFooter";
 import { PreviewStage } from "../../components/PreviewStage";
 import { Workbench } from "../../components/Workbench";
-import { Alert, Button, IconButton, SegmentedControl } from "../../components/ui";
+import { Alert, Badge, Button, IconButton, SegmentedControl } from "../../components/ui";
 import { usePreview } from "../../hooks/usePreview";
 import { safeOutputDimensions, sourceDimensionsFor } from "../../lib/operations";
 import { activeAssetOf, useSession } from "../../state/session";
@@ -23,6 +23,13 @@ type RotateOperation = Extract<Operation, { type: "rotate" }>;
 type FlipOperation = Extract<Operation, { type: "flip" }>;
 type TextOperation = Extract<Operation, { type: "watermark-text" }>;
 type ImageOperation = Extract<Operation, { type: "watermark-image" }>;
+type AdjustOperation = Extract<Operation, { type: "adjust" }>;
+type FilterOperation = Extract<Operation, { type: "filter" }>;
+type ShapeOperation = Extract<Operation, { type: "shape" }>;
+type BorderOperation = Extract<Operation, { type: "border" }>;
+type ChromaOperation = Extract<Operation, { type: "chroma-key" }>;
+type WarpOperation = Extract<Operation, { type: "warp" }>;
+type QuantizeOperation = Extract<Operation, { type: "quantize" }>;
 
 function SingleOperationSection({
   label,
@@ -88,6 +95,15 @@ function ToolControls({
   const textOperation = operations.find((op): op is TextOperation => op.type === "watermark-text");
   const imageOperation = operations.find(
     (op): op is ImageOperation => op.type === "watermark-image",
+  );
+  const adjustOperation = operations.find((op): op is AdjustOperation => op.type === "adjust");
+  const filterOperation = operations.find((op): op is FilterOperation => op.type === "filter");
+  const shapeOperation = operations.find((op): op is ShapeOperation => op.type === "shape");
+  const borderOperation = operations.find((op): op is BorderOperation => op.type === "border");
+  const chromaOperation = operations.find((op): op is ChromaOperation => op.type === "chroma-key");
+  const warpOperation = operations.find((op): op is WarpOperation => op.type === "warp");
+  const quantizeOperation = operations.find(
+    (op): op is QuantizeOperation => op.type === "quantize",
   );
 
   switch (tool.id) {
@@ -215,6 +231,90 @@ function ToolControls({
         </section>
       );
     }
+    case "adjust":
+      return (
+        <SingleOperationSection
+          label="Adjustments"
+          asset={asset}
+          operations={operations}
+          operation={adjustOperation}
+          onUpdate={(next) => updateOperation(asset.id, next.id, next)}
+        />
+      );
+    case "filters":
+      return (
+        <SingleOperationSection
+          label="Filter"
+          asset={asset}
+          operations={operations}
+          operation={filterOperation}
+          onUpdate={(next) => updateOperation(asset.id, next.id, next)}
+        />
+      );
+    case "chroma-key":
+      return (
+        <SingleOperationSection
+          label="Chroma key"
+          asset={asset}
+          operations={operations}
+          operation={chromaOperation}
+          onUpdate={(next) => updateOperation(asset.id, next.id, next)}
+        />
+      );
+    case "warp":
+      return (
+        <SingleOperationSection
+          label="Perspective & distort"
+          asset={asset}
+          operations={operations}
+          operation={warpOperation}
+          onUpdate={(next) => updateOperation(asset.id, next.id, next)}
+        />
+      );
+    case "quantize":
+      return (
+        <SingleOperationSection
+          label="Quantize"
+          asset={asset}
+          operations={operations}
+          operation={quantizeOperation}
+          onUpdate={(next) => updateOperation(asset.id, next.id, next)}
+        />
+      );
+    case "annotate":
+      return (
+        <>
+          <SingleOperationSection
+            label="Shape"
+            asset={asset}
+            operations={operations}
+            operation={shapeOperation}
+            onUpdate={(next) => updateOperation(asset.id, next.id, next)}
+          />
+          <section className="inspector-section">
+            <h2 className="inspector-section__title">Border</h2>
+            {borderOperation ? (
+              <OperationFields
+                operation={borderOperation}
+                source={sourceDimensionsFor(asset, operations, borderOperation.id)}
+                onChange={(next) => updateOperation(asset.id, next.id, next)}
+              />
+            ) : (
+              <Button
+                size="sm"
+                onClick={() =>
+                  addOperation(
+                    asset.id,
+                    createOperation("border", { width: asset.width, height: asset.height }),
+                  )
+                }
+              >
+                Add border
+              </Button>
+            )}
+          </section>
+        </>
+      );
   }
 }
 
@@ -248,6 +348,12 @@ export function QuickToolPage() {
     if (tool.id === "watermark") {
       required.push(watermarkMode === "text" ? "watermark-text" : "watermark-image");
     }
+    if (tool.id === "adjust") required.push("adjust");
+    if (tool.id === "filters") required.push("filter");
+    if (tool.id === "annotate") required.push("shape");
+    if (tool.id === "chroma-key") required.push("chroma-key");
+    if (tool.id === "warp") required.push("warp");
+    if (tool.id === "quantize") required.push("quantize");
     for (const type of required) {
       if (!operations.some((operation) => operation.type === type)) {
         addOperation(asset.id, createOperation(type, { width: asset.width, height: asset.height }));
@@ -331,6 +437,22 @@ export function QuickToolPage() {
                 Open in Editor
               </Link>
             </div>
+            {operations.length > 0 ? (
+              <div className="stack" style={{ gap: 6 }}>
+                <span className="field__label">Active pipeline</span>
+                <div className="row">
+                  {operations.slice(0, 3).map((operation) => (
+                    <Badge key={operation.id}>
+                      {operationLabel(operation)}: {describeOperation(operation)}
+                    </Badge>
+                  ))}
+                  {operations.length > 3 ? <Badge>+{operations.length - 3} more</Badge> : null}
+                </div>
+                <Link className="field__hint" to="/editor">
+                  Manage operations in the Editor
+                </Link>
+              </div>
+            ) : null}
             {asset?.warning ? (
               <Alert tone="warn" title="Heads up">
                 {asset.warning}

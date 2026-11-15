@@ -1,9 +1,13 @@
-import type { FitMode, Operation } from "@pixelforge/image-contracts";
+import { downloadBlob } from "@pixelforge/browser-image-io";
+import { FORMATS, type FitMode, type Operation } from "@pixelforge/image-contracts";
 import { createOperation } from "@pixelforge/operation-model";
-import { ArrowRight } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { Badge, Button, EmptyState } from "../../components/ui";
+import type { Recipe } from "@pixelforge/recipe-schema";
+import { ArrowRight, Download, Play, Trash2, Upload } from "lucide-react";
+import { useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Alert, Badge, Button, EmptyState } from "../../components/ui";
 import { activeAssetOf, useSession } from "../../state/session";
+import { useRecipes } from "../recipes/useRecipes";
 
 interface Preset {
   name: string;
@@ -108,6 +112,132 @@ const PRESETS: readonly Preset[] = [
 const CATEGORIES = ["Social", "Video", "Print"] as const;
 const EMPTY_OPERATIONS: Operation[] = [];
 
+function slugify(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "recipe"
+  );
+}
+
+function RecipesSection() {
+  const navigate = useNavigate();
+  const setBatchOperations = useSession((state) => state.setBatchOperations);
+  const setExport = useSession((state) => state.setExport);
+  const { recipes, removeRecipe, importRecipe, exportRecipe } = useRecipes();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const applyRecipe = (recipe: Recipe) => {
+    setBatchOperations(recipe.operations.map((operation) => structuredClone(operation)));
+    if (recipe.export) setExport(recipe.export);
+    navigate("/batch");
+  };
+
+  const downloadRecipe = (recipe: Recipe) => {
+    downloadBlob(
+      new Blob([exportRecipe(recipe)], { type: "application/json" }),
+      `${slugify(recipe.name)}.pixelforge-recipe.json`,
+    );
+  };
+
+  return (
+    <section>
+      <div className="section-heading">
+        <h2>Saved recipes</h2>
+        <p>{recipes.length} saved</p>
+      </div>
+      <div className="row" style={{ marginBottom: "var(--space-3)" }}>
+        <Button
+          size="sm"
+          icon={<Upload size={14} aria-hidden="true" />}
+          onClick={() => inputRef.current?.click()}
+        >
+          Import recipe JSON
+        </Button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (!file) return;
+            const result = importRecipe(await file.text());
+            if (result.ok) {
+              setError(null);
+              setMessage(`Imported “${result.recipe.name}”.`);
+            } else {
+              setMessage(null);
+              setError(result.errors.join(" "));
+            }
+          }}
+        />
+        <Link className="btn btn--sm btn--ghost" to="/batch">
+          Open Batch Studio
+        </Link>
+      </div>
+
+      {error ? (
+        <Alert tone="danger" title="Recipe import failed">
+          {error}
+        </Alert>
+      ) : null}
+      {message ? <Alert tone="ok">{message}</Alert> : null}
+
+      {recipes.length === 0 ? (
+        <p className="field__hint">
+          No saved recipes yet. Build a pipeline in Batch Studio and save it, or import a JSON
+          recipe. Recipes are stored locally in this browser.
+        </p>
+      ) : (
+        <div className="recipe-list">
+          {recipes.map((recipe) => (
+            <div className="recipe-item" key={recipe.name}>
+              <div className="recipe-item__text">
+                <span className="recipe-item__name">{recipe.name}</span>
+                <span className="field__hint">
+                  {recipe.operations.length} operation{recipe.operations.length === 1 ? "" : "s"}
+                  {recipe.export?.format ? ` · ${FORMATS[recipe.export.format].label}` : ""}
+                </span>
+              </div>
+              <div className="row">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  icon={<Play size={13} aria-hidden="true" />}
+                  onClick={() => applyRecipe(recipe)}
+                >
+                  Apply
+                </Button>
+                <Button
+                  size="sm"
+                  icon={<Download size={13} aria-hidden="true" />}
+                  onClick={() => downloadRecipe(recipe)}
+                >
+                  JSON
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<Trash2 size={13} aria-hidden="true" />}
+                  aria-label={`Delete ${recipe.name}`}
+                  onClick={() => removeRecipe(recipe.name)}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function PresetsPage() {
   const navigate = useNavigate();
   const asset = useSession(activeAssetOf);
@@ -148,13 +278,17 @@ export function PresetsPage() {
   return (
     <div className="page">
       <header className="page-header">
-        <span className="eyebrow">Presets</span>
-        <h1>Common sizes, ready to apply</h1>
+        <span className="eyebrow">Presets & recipes</span>
+        <h1>Presets and reusable recipes</h1>
         <p className="lede">
-          Applying a preset sets a resize operation on the selected image and opens the Resize tool.
-          “Cover” fills the frame and centre-crops; “contain” fits the whole image inside it.
+          Reuse a saved batch pipeline, or apply a common output size to the selected image. “Cover”
+          fills the frame and centre-crops; “contain” fits the whole image inside it.
         </p>
       </header>
+
+      <div className="stack stack--lg" style={{ marginBottom: "var(--space-6)" }}>
+        <RecipesSection />
+      </div>
 
       {!asset ? (
         <div style={{ marginBottom: "var(--space-5)" }}>

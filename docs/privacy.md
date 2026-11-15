@@ -22,6 +22,8 @@ The following preferences may be stored in `localStorage`:
 - `pixelforge.theme` — light or dark theme.
 - `pixelforge.export-settings` — format, quality, background, target size and filename template.
 - `pixelforge.recent-tools` — the last few tools used.
+- `pixelforge.recipes` — saved batch recipes. Recipes contain operation parameters and optional
+export settings, never image bytes.
 
 Images are held in memory for the current session and are not written to local storage or IndexedDB
 by default. Closing or reloading the tab discards the session; export anything you want to keep.

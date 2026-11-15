@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { Dropzone } from "../../components/Dropzone";
 import { Alert, Badge } from "../../components/ui";
 import { useImport } from "../../hooks/useImport";
+import { usePasteImport } from "../../hooks/usePasteImport";
 import { useSession } from "../../state/session";
 import { EXTRA_WORKSPACES, TOOLS, getTool } from "../tools/tools";
 
@@ -72,6 +73,7 @@ function RecentTools() {
 export function HomePage() {
   const { importFiles, busy, errors, clearErrors } = useImport();
   const assets = useSession((state) => state.assets);
+  usePasteImport(importFiles);
 
   return (
     <div className="page">

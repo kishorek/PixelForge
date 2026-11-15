@@ -105,6 +105,35 @@ export function HelpPage() {
               memory; cancel and process in smaller groups if needed.
             </li>
             <li>Output may differ slightly between browsers because their encoders differ.</li>
+            <li>Histogram, palette and pixel inspection use the reduced-resolution preview.</li>
+            <li>
+              Editor 100% zoom is preview-pixel scale; exports render at full resolution. Drag the
+              zoomed canvas to pan.
+            </li>
+            <li>
+              Collage, merge, contact sheet and split render sequentially in workers; very large
+              queues can take longer.
+            </li>
+            <li>
+              Metadata is read from the first 4 MB of the file; exports re-encode and remove
+              metadata.
+            </li>
+            <li>
+              Saved recipes and preferences live in local storage and are removed when site data is
+              cleared.
+            </li>
+            <li>
+              Advanced resampling offers Lanczos 3 and Catmull-Rom; perspective/distortion is an
+              approximate conventional warp.
+            </li>
+            <li>
+              Masks are stored with the operation as a PNG and apply to every image in batch
+              processing.
+            </li>
+            <li>
+              Output formats are limited to codecs the browser actually encodes; unsupported formats
+              are not faked.
+            </li>
           </ul>
         </section>
 
@@ -115,6 +144,9 @@ export function HelpPage() {
               Use <kbd>Tab</kbd> and <kbd>Shift</kbd>+<kbd>Tab</kbd> to move through controls.
             </li>
             <li>Focus a slider and use the arrow keys to adjust it precisely.</li>
+            <li>
+              Paste an image from the clipboard with <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>V</kbd>.
+            </li>
             <li>Drag on the crop preview to draw a new crop; drag inside it to move it.</li>
             <li>The comparison slider is keyboard adjustable and works like any range input.</li>
             <li>
@@ -158,13 +190,14 @@ export function HelpPage() {
         open={confirmStorage}
         onOpenChange={setConfirmStorage}
         title="Clear local preferences?"
-        description="Theme, export defaults and recent tools stored in this browser will be removed. Images in the current session are not affected."
+        description="Theme, export defaults, recent tools and saved recipes stored in this browser will be removed. Images in the current session are not affected."
         confirmLabel="Clear preferences"
         onConfirm={() => {
           try {
             localStorage.removeItem("pixelforge.theme");
             localStorage.removeItem("pixelforge.export-settings");
             localStorage.removeItem("pixelforge.recent-tools");
+            localStorage.removeItem("pixelforge.recipes");
           } catch {
             // Storage may be unavailable.
           }

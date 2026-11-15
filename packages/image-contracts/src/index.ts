@@ -1,6 +1,6 @@
 export type ImageFormat = "jpeg" | "png" | "webp" | "avif";
 
-export type ResamplingMethod = "nearest" | "bilinear" | "box";
+export type ResamplingMethod = "nearest" | "bilinear" | "box" | "lanczos3" | "catmull-rom";
 
 export type FitMode = "contain" | "cover" | "stretch";
 
@@ -55,7 +55,10 @@ export interface CropParams {
 }
 
 export interface RotateParams {
-  angle: 90 | 180 | 270;
+  /** Rotation in degrees. Right angles use the fast WASM path. */
+  angle: number;
+  /** Background for areas exposed by arbitrary rotation, or null for transparency. */
+  background: string | null;
 }
 
 export interface FlipParams {
@@ -73,6 +76,12 @@ export interface TextWatermarkParams {
   /** Margin as a fraction of the shorter image edge. */
   marginRatio: number;
   tile: boolean;
+  /** Optional caption plate behind the text, or null for no background. */
+  background: string | null;
+  /** Padding around the text when a background plate is used. */
+  paddingRatio: number;
+  fontWeight: 400 | 600 | 700 | 800;
+  italic: boolean;
 }
 
 export interface ImageWatermarkParams {
@@ -85,13 +94,117 @@ export interface ImageWatermarkParams {
   tile: boolean;
 }
 
+export interface AdjustParams {
+  /** All adjustment values are -100..100 except gamma, which is 0.2..3. */
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  temperature: number;
+  exposure: number;
+  highlights: number;
+  shadows: number;
+  tint: number;
+  gamma: number;
+  vibrance: number;
+}
+
+export type FilterPreset =
+  | "grayscale"
+  | "sepia"
+  | "invert"
+  | "blur"
+  | "sharpen"
+  | "emboss"
+  | "edge"
+  | "posterize"
+  | "vignette";
+
+export interface FilterParams {
+  preset: FilterPreset;
+  /** Filter strength 0-1. */
+  intensity: number;
+}
+
+export type ShapeKind = "rectangle" | "ellipse" | "line" | "arrow";
+
+export interface ShapeParams {
+  shape: ShapeKind;
+  /** Normalised geometry relative to the image. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fill: string;
+  stroke: string;
+  /** Stroke width as a fraction of the shorter image edge. */
+  strokeWidthRatio: number;
+  opacity: number;
+}
+
+export interface ChromaKeyParams {
+  /** Key colour in #rrggbb form. */
+  color: string;
+  /** Colour distance tolerance 0-100. */
+  tolerance: number;
+  /** Soft transition width 0-100. */
+  feather: number;
+  /** Key the inverse colour range. */
+  invert: boolean;
+  /** Replacement background, or null for transparency. */
+  background: string | null;
+}
+
+export type MaskEffectKind = "erase" | "blur" | "sharpen";
+
+export type DitherMode = "none" | "floyd-steinberg" | "ordered";
+
+export interface QuantizeParams {
+  /** Palette size 2-64. */
+  colors: number;
+  dither: DitherMode;
+}
+
+export interface MaskEffectParams {
+  effect: MaskEffectKind;
+  /** PNG data URL for the painted mask; empty means no effect. */
+  maskDataUrl: string;
+  /** Soft mask edge 0-100. */
+  feather: number;
+  invert: boolean;
+}
+
+export interface WarpParams {
+  /** Vertical keystone perspective, -100..100. */
+  perspective: number;
+  /** Barrel (+) or pincushion (-) distortion, -100..100. */
+  distortion: number;
+  /** Background for pixels warped outside the source, or null for transparency. */
+  background: string | null;
+}
+
+export interface BorderParams {
+  /** Border width as a fraction of the shorter image edge. */
+  widthRatio: number;
+  color: string;
+  opacity: number;
+  inset: boolean;
+}
+
 export type Operation =
   | { id: string; type: "resize"; enabled: boolean; params: ResizeParams }
   | { id: string; type: "crop"; enabled: boolean; params: CropParams }
   | { id: string; type: "rotate"; enabled: boolean; params: RotateParams }
   | { id: string; type: "flip"; enabled: boolean; params: FlipParams }
   | { id: string; type: "watermark-text"; enabled: boolean; params: TextWatermarkParams }
-  | { id: string; type: "watermark-image"; enabled: boolean; params: ImageWatermarkParams };
+  | { id: string; type: "watermark-image"; enabled: boolean; params: ImageWatermarkParams }
+  | { id: string; type: "adjust"; enabled: boolean; params: AdjustParams }
+  | { id: string; type: "filter"; enabled: boolean; params: FilterParams }
+  | { id: string; type: "shape"; enabled: boolean; params: ShapeParams }
+  | { id: string; type: "border"; enabled: boolean; params: BorderParams }
+  | { id: string; type: "chroma-key"; enabled: boolean; params: ChromaKeyParams }
+  | { id: string; type: "warp"; enabled: boolean; params: WarpParams }
+  | { id: string; type: "mask-effect"; enabled: boolean; params: MaskEffectParams }
+  | { id: string; type: "quantize"; enabled: boolean; params: QuantizeParams };
 
 export type OperationType = Operation["type"];
 
@@ -158,6 +271,14 @@ export type ProcessStage =
   | "rotate"
   | "flip"
   | "watermark"
+  | "adjust"
+  | "filter"
+  | "shape"
+  | "border"
+  | "chroma-key"
+  | "warp"
+  | "mask-effect"
+  | "quantize"
   | "encode"
   | "compress";
 
